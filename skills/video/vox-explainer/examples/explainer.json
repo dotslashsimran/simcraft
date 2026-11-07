@@ -1,0 +1,131 @@
+{
+ "audio": "vo.mp4",
+ "format": "16:9",
+ "beats": [
+  {
+   "at": "Did",
+   "device": "big",
+   "bg": "red",
+   "text": "$0",
+   "sub": "What startups spent on SOC 2 in 2018",
+   "submark": "SOC 2",
+   "submark_at": "SOC2"
+  },
+  {
+   "at": "that's",
+   "device": "card",
+   "bg": "navy",
+   "label": "Not me saying it",
+   "head": "Northwind's own founder",
+   "headmark": "founder"
+  },
+  {
+   "at": "today",
+   "device": "photo",
+   "bg": "red",
+   "url": "https://example.com",
+   "caption": "example.com, today",
+   "width": 60,
+   "ratio": 1.6,
+   "tilt": -2,
+   "tags": [
+    {
+     "text": "Same product",
+     "at": "selling",
+     "yellow": true,
+     "x": 62,
+     "y": 78
+    }
+   ]
+  },
+  {
+   "at": "300",
+   "device": "stat",
+   "bg": "navy",
+   "value": 300,
+   "prefix": "$",
+   "suffix": "M",
+   "sub": "a year, selling the same thing",
+   "submark": "a year",
+   "submark_at": "year"
+  },
+  {
+   "at": "So",
+   "device": "card",
+   "bg": "red",
+   "label": "The question",
+   "text": "How do you build a $300M business in a market that didn't exist?",
+   "mark": "didn't exist",
+   "mark_at": "didn't"
+  },
+  {
+   "at": "They",
+   "device": "big",
+   "bg": "navy",
+   "text": "Two moves",
+   "sub": "and you can copy both",
+   "submark": "copy both",
+   "submark_at": "copy"
+  },
+  {
+   "at": "Move",
+   "device": "card",
+   "bg": "red",
+   "label": "Move 01",
+   "head": "Know exactly when someone needs you",
+   "headmark": "needs you",
+   "headmark_at": "needs",
+   "tags": [
+    {
+     "text": "Move 01",
+     "yellow": true,
+     "x": 6,
+     "y": 8
+    }
+   ]
+  },
+  {
+   "at": "Because",
+   "device": "big",
+   "bg": "navy",
+   "text": "Nobody wakes up wanting compliance",
+   "mark": "compliance"
+  },
+  {
+   "at": "Here's",
+   "device": "card",
+   "bg": "red",
+   "label": "Here's what actually happens",
+   "text": "You're a startup. A big company finally wants to buy from you.",
+   "mark": "wants to buy",
+   "mark_at": "wants"
+  },
+  {
+   "at": "Then",
+   "device": "card",
+   "bg": "navy",
+   "label": "Their security team",
+   "quote": true,
+   "text": "Where's the SOC 2 report?",
+   "mark": "SOC 2 report",
+   "mark_at": "SOC",
+   "tilt": 2,
+   "tags": [
+    {
+     "text": "One line",
+     "at": "line",
+     "x": 8,
+     "y": 10
+    }
+   ]
+  },
+  {
+   "at": "But",
+   "device": "big",
+   "bg": "red",
+   "text": "You don't have one.",
+   "mark": "don't",
+   "mark_at": "don't"
+  }
+ ]
+}

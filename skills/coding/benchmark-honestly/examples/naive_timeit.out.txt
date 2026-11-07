@@ -1,0 +1,11 @@
+map(str.upper, WORDS)            0.567 us per call
+[w.upper() for w in WORDS]   60290.583 us per call
+naive conclusion: map is 106370x faster
+
+2 ** 64 (folded at compile time)     3.9 ns
+x ** 64 (really computed)          201.7 ns
+naive conclusion: big powers cost 3.9 ns
+
+Proof that 2 ** 64 is folded (dis output):
+      1           0 LOAD_CONST               0 (18446744073709551616)
+                  2 RETURN_VALUE

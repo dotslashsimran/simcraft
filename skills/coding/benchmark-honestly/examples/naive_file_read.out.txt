@@ -1,0 +1,2 @@
+trial 1:   64 KiB buffer first: 0.482 s, then 1024 KiB buffer: 0.144 s  -> naive verdict: 1024 KiB buffer is 3.3x faster
+trial 2: 1024 KiB buffer first: 0.414 s, then   64 KiB buffer: 0.112 s  -> naive verdict: 64 KiB buffer is 3.7x faster

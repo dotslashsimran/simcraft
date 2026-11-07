@@ -1,0 +1,17 @@
+
+buf64k  median 197.01 ms   CI 135.95 ms to 325.89 ms  p5 89.86 ms   p95 1.084 s    MAD 150.14 ms
+buf1m   median 164.81 ms   CI 126.61 ms to 273.52 ms  p5 98.69 ms   p95 645.78 ms  MAD 95.26 ms
+
+WARNINGS
+  - environment: 1-minute load average is 9.0 on 8 logical cores. Other work is competing for the CPU; close it or expect wide spread.
+  - environment: 8 other processes are using 5% or more CPU right now.
+  - environment: Running on battery. Laptops often lower clock speeds on battery; plug in.
+  - buf64k: times rise steadily during the run (Spearman rho=0.69). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - buf64k: robust spread is 76% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - buf64k: 2 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - buf1m: times rise steadily during the run (Spearman rho=0.74). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - buf1m: robust spread is 58% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - buf1m: 2 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+
+VERDICT
+  No clear difference between buf1m and buf64k: time ratio 0.837, 95% CI 0.451 to 1.622 includes 1.0 or the test disagrees (p=0.83). Do not claim a speedup. More runs or a quieter machine may narrow it.

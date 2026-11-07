@@ -1,0 +1,54 @@
+# Data flow description for Tinybill, read from vulnerable/app.py. Render with:
+#   python3 ../../scripts/dataflow.py dataflow.yaml --stride
+title: Tinybill invoice API
+boundaries:
+  - id: internet
+    label: Internet (untrusted)
+  - id: server
+    label: App server (trusted)
+  - id: provider
+    label: Payment provider (third party)
+nodes:
+  - id: user
+    label: Freelancer (browser or script)
+    kind: actor
+    boundary: internet
+  - id: attacker
+    label: Anyone else on the internet
+    kind: actor
+    boundary: internet
+  - id: api
+    label: HTTP API (app.py)
+    kind: process
+    boundary: server
+  - id: db
+    label: SQLite (users, sessions, invoices)
+    kind: store
+    boundary: server
+  - id: files
+    label: Invoice files on disk
+    kind: store
+    boundary: server
+  - id: payments
+    label: Payment provider
+    kind: external
+    boundary: provider
+flows:
+  - from: user
+    to: api
+    label: login, invoice reads, search, file download (bearer token)
+  - from: attacker
+    to: api
+    label: same endpoints, own account or none
+  - from: payments
+    to: api
+    label: payment webhook POST
+  - from: api
+    to: payments
+    label: charge requests (API key)
+  - from: api
+    to: db
+    label: SQL
+  - from: api
+    to: files
+    label: file reads by name

@@ -1,0 +1,4 @@
+$ uv
+zsh:1: command not found: uv
+
+[exit 127, 0.01s]

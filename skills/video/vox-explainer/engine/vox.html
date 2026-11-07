@@ -1,0 +1,239 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>vox engine</title>
+<!--
+  Vox-style explainer compositor. render(t) is a pure function of time: every pixel comes from t alone,
+  so frame-stepping is exact and any frame can be checked on its own.
+  Input (set before load): window.SPEC = { w, h, fps, twos, beats: [...] }  (see SKILL.md for the beat format)
+  Each beat's start, and every highlight, is already resolved to milliseconds by scripts/build.py.
+-->
+<style>
+  @font-face { font-family: GeistMono; src: url(fonts/GeistMono-Medium.woff2); font-weight: 500; }
+  :root { --navy: #1E2B3A; --red: #C7302B; --paper: #F2EAD8; --ink: #141414; --yellow: #F5C518; --mute: #6b6253; --on-mark: #141414;
+          --f-display: "Avenir Next Condensed"; --w-display: 800; --case-display: uppercase; --ls-display: -.01em;
+          --f-quote: "Iowan Old Style", Georgia, serif; --f-mono: GeistMono; --sub-on-field: var(--paper); }
+  html, body { margin: 0; overflow: hidden; background: var(--navy); }
+  #stage { position: absolute; left: 0; top: 0; overflow: hidden; background: var(--navy); }
+  .field { position: absolute; inset: -10%; }
+  .beat { position: absolute; inset: 0; display: none; }
+  .grain { position: absolute; inset: 0; opacity: .1; mix-blend-mode: multiply; pointer-events: none; z-index: 50; }
+  .center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .obj { will-change: transform; transform-origin: 50% 50%; }
+  .shade { filter: drop-shadow(0 30px 38px rgba(0,0,0,.42)); }
+  .paper { background: var(--paper); color: var(--ink); padding: calc(var(--u)*3.2) calc(var(--u)*3.8) calc(var(--u)*3.6);
+           clip-path: polygon(0 1.5%, 8% 0, 22% 1.6%, 40% .4%, 61% 1.8%, 79% .2%, 100% 1.4%, 99.3% 30%, 100% 62%, 99.2% 100%, 72% 98.6%, 48% 100%, 26% 98.7%, 0 100%, .7% 66%, 0 31%); }
+  .label { font: 500 calc(var(--u)*1.55) var(--f-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--mute); }
+  .head { font: var(--w-display) calc(var(--u)*7.6)/.95 var(--f-display); text-transform: var(--case-display); letter-spacing: var(--ls-display); }
+  .serif { font: 400 calc(var(--u)*4.6)/1.22 var(--f-quote); }
+  .tag { background: var(--ink); color: var(--paper); font: 500 calc(var(--u)*1.75) var(--f-mono); letter-spacing: .08em;
+         padding: calc(var(--u)*.9) calc(var(--u)*1.35); text-transform: uppercase; white-space: nowrap; position: absolute; }
+  .tag.y { background: var(--yellow); color: var(--on-mark); }
+  .big { font: var(--w-display) calc(var(--u)*13)/.9 var(--f-display); text-transform: var(--case-display); color: var(--big-color, var(--paper));
+         letter-spacing: var(--ls-display); text-align: center; }
+  .sub { font: 400 calc(var(--u)*3.9)/1.25 var(--f-quote); color: var(--big-color, var(--paper)); text-align: center; margin-top: calc(var(--u)*1.6); }
+  mark { color: inherit; background: linear-gradient(var(--yellow), var(--yellow)) no-repeat 0 58% / 0% 78%; padding: 0 .1em; margin: 0 -.1em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+  .photo { background: var(--paper); padding: calc(var(--u)*.9) calc(var(--u)*.9) calc(var(--u)*2.6); }
+  .photo .win { overflow: hidden; }
+  .photo img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; transform-origin: 50% 0; }
+  .photo .cap { font: 500 calc(var(--u)*1.2) var(--f-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--mute); margin-top: calc(var(--u)*.9); }
+  .cut img { display: block; }
+  .list .row { display: flex; align-items: baseline; gap: calc(var(--u)*1.4); margin: calc(var(--u)*.8) 0; }
+  .list .n { font: var(--w-display) calc(var(--u)*5)/1 var(--f-display); color: var(--yellow); }
+  .list .t { font: var(--w-display) calc(var(--u)*4.4)/1 var(--f-display); text-transform: var(--case-display); }
+  svg { position: absolute; inset: 0; overflow: visible; }
+  /* on a field that IS the highlight colour (a brand whose accent is also a field), accents flip to ink/paper */
+  .on-accent .tag.y { background: var(--ink); color: var(--paper); }
+  .on-accent .big mark, .on-accent .sub mark { background-image: linear-gradient(var(--paper), var(--paper)); --on-mark: var(--ink); }
+  .clean .paper { clip-path: none; border-radius: var(--radius, 14px); }
+  .clean .shade { filter: drop-shadow(0 18px 30px rgba(0,0,0,.16)); }
+  .clean .photo { border-radius: var(--radius, 14px); }
+  .clean .photo .win { border-radius: calc(var(--radius, 14px) * .6); }
+</style>
+<div id="stage"></div>
+<script>
+const S = window.SPEC, W = S.w, H = S.h, FPS = S.fps || 30;
+// ---------- theme: style C by default, or a brand kit's "vox" section (see the brand-kit skill) ----------
+const T = S.theme || {};
+{ const r = document.documentElement.style, set = (k, v) => v != null && v !== "" && r.setProperty(k, v);
+  set("--navy", T.field_a); set("--red", T.field_b); set("--paper", T.paper); set("--ink", T.ink);
+  set("--yellow", T.accent); set("--on-mark", T.on_accent); set("--mute", T.muted); set("--radius", T.radius);
+  const ff = (f) => f && `"${f.family}", ${f.fallback || "system-ui, sans-serif"}`;
+  if (T.display) { set("--f-display", ff(T.display)); set("--w-display", T.display.weight || 600); set("--case-display", T.display.transform || "none");
+    set("--ls-display", (T.display.letter_spacing_em ?? -0.02) + "em"); }
+  if (T.quote) set("--f-quote", ff(T.quote));
+  if (T.mono) set("--f-mono", ff(T.mono));
+  // the brand's own font files (local copies made by brand-kit)
+  const css = (T.font_files || []).map((f) => `@font-face{font-family:"${f.family}";src:url("${f.url}");font-weight:${f.weight || "100 900"};font-style:${f.style || "normal"};}`).join("");
+  if (css) { const st = document.createElement("style"); st.textContent = css; document.head.appendChild(st); }
+  if (T.edges === "clean") document.documentElement.classList.add("clean");
+}
+const U = Math.min(W, H) / 54;                       // type unit: 20px at 1080
+document.documentElement.style.setProperty("--u", U + "px");
+const stage = document.getElementById("stage");
+stage.style.width = W + "px"; stage.style.height = H + "px";
+document.body.style.width = W + "px"; document.body.style.height = H + "px";
+
+const lumHex = (h) => { const n = parseInt(String(h).replace("#", ""), 16); return (0.2126 * (n >> 16 & 255) + 0.7152 * (n >> 8 & 255) + 0.0722 * (n & 255)) / 255; };
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = (p) => 1 - Math.pow(1 - clamp(p, 0, 1), 3);
+const back = (p) => { p = clamp(p, 0, 1); const c = 1.5; return 1 + (c + 1) * Math.pow(p - 1, 3) + c * Math.pow(p - 1, 2); };
+const twos = (ms) => S.twos === false ? ms : Math.floor(ms / (1000 / 12)) * (1000 / 12);   // animate on twos: 12 drawings/s
+const rnd = (seed) => { const x = Math.sin(seed * 9301 + 49297) * 233280; return x - Math.floor(x); };
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+// wrap the phrase to highlight in <mark>; its sweep time comes from the beat's resolved marks
+const marked = (text, mark) => { const t = esc(text); if (!mark) return t; const m = esc(mark); const i = t.toLowerCase().indexOf(m.toLowerCase());
+  return i < 0 ? t : t.slice(0, i) + "<mark>" + t.slice(i, i + m.length) + "</mark>" + t.slice(i + m.length); };
+
+// procedural paper grain, so nothing binary ships with the skill
+const grain = el("canvas", "grain"); grain.width = 512; grain.height = 512; if (T.grain != null) grain.style.opacity = T.grain;
+{ const g = grain.getContext("2d"), d = g.createImageData(512, 512);
+  for (let i = 0; i < d.data.length; i += 4) { const v = 128 + (Math.random() - .5) * 150; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+  g.putImageData(d, 0, 0); }
+grain.style.left = grain.style.top = "-40px"; grain.style.width = W + 80 + "px"; grain.style.height = H + 80 + "px";
+
+// huge type must fit the frame whatever the font: wrap at 86% width, then shrink until no line or word overflows
+// (style C's condensed face fits easily; a wide brand face like Devin's ran off both edges)
+function fit(e, box) {
+  e.style.maxWidth = W * 0.86 + "px"; e.style.marginLeft = e.style.marginRight = "auto";
+  requestAnimationFrame(() => {}); // layout happens when the beat is attached; measure lazily on first draw
+  e._fit = () => { if (e._fitted) return; const parent = e.closest(".beat"); if (!parent || parent.style.display === "none") return;
+    let size = parseFloat(getComputedStyle(e).fontSize);
+    for (let k = 0; k < 30 && (e.scrollWidth > W * 0.88 || e.scrollHeight > H * 0.62); k++) { size *= 0.93; e.style.fontSize = size + "px"; }
+    e._fitted = true; };
+}
+
+// ---------- devices: each returns { node, draw(lt, t) } ----------
+// lt = ms since the beat started (already stepped on twos), t = absolute ms (for word-timed highlights)
+function field(b, i) {
+  // colour-blocked background split on a diagonal; the split angle and side alternate per beat
+  const f = el("div", "field");
+  const name = { navy: "a", red: "b" }[b.bg] || b.bg || "b";
+  const col = { a: "var(--navy)", b: "var(--red)", paper: "var(--paper)", accent: "var(--yellow)" };
+  const a = col[name] || "var(--red)";
+  const c = b.bg2 ? (col[b.bg2] || b.bg2) : (name === "b" ? "var(--navy)" : "var(--red)");
+  // big type sits on the main field: use ink on a light field, paper on a dark one
+  const fieldHex = { a: T.field_a || "#1E2B3A", b: T.field_b || "#C7302B", paper: T.paper || "#F2EAD8", accent: T.accent || "#F5C518" }[name] || "#C7302B";
+  f.dataset.light = lumHex(fieldHex) > 0.6 ? "1" : "";
+  f.dataset.accent = fieldHex.toLowerCase() === String(T.accent || "#F5C518").toLowerCase() ? "1" : "";
+  // style C's navy and red are close in brightness, so type can cross the split. A brand whose two fields differ a lot
+  // (white and blue) would lose half a line where it crosses, so the second colour becomes a narrow band at the edge.
+  const strong = Math.abs(lumHex(T.field_a || "#1E2B3A") - lumHex(T.field_b || "#C7302B")) > 0.35;
+  const ang = 100 + (i % 3) * 14 + (i % 2 ? 0 : 180), cut = b.split ?? (strong ? 86 : 58);
+  f.style.background = b.flat ? a : `linear-gradient(${ang}deg, ${a} ${cut}%, ${c} ${cut}%)`;
+  return f;
+}
+
+const DEV = {
+  // one huge statement, slammed in
+  big(b) {
+    const box = el("div", "center"); const inner = el("div", "obj"); box.appendChild(inner);
+    const big = el("div", "big", marked(b.text, b.mark)); inner.appendChild(big);
+    if (b.sub) inner.appendChild(el("div", "sub", marked(b.sub, b.submark)));
+    fit(big, box);
+    return { node: box, draw(lt) { const p = back(lt / 380); inner.style.transform = `scale(${0.6 + 0.4 * p}) rotate(${(1 - p) * -4 - 1}deg) translateY(${-lt * 0.004}px)`; inner.style.opacity = clamp(lt / 120, 0, 1); } };
+  },
+  // a torn paper card: label, optional headline, quote with one highlighted phrase
+  card(b) {
+    const box = el("div", "center"); const o = el("div", "obj shade"); box.appendChild(o);
+    const p = el("div", "paper"); p.style.width = (b.width || 72) + "%"; p.style.maxWidth = W * 0.84 + "px"; p.style.boxSizing = "border-box";
+    o.style.width = "100%"; o.style.display = "flex"; o.style.justifyContent = "center";
+    if (b.label) p.appendChild(el("div", "label", esc(b.label)));
+    if (b.head) p.appendChild(el("div", "head", marked(b.head, b.headmark)));
+    if (b.text) { const q = el("div", "serif", (b.quote ? "“" : "") + marked(b.text, b.mark) + (b.quote ? "”" : "")); q.style.marginTop = U * 1.2 + "px"; p.appendChild(q); }
+    o.appendChild(p);
+    const tilt = b.tilt ?? -1.6;
+    return { node: box, draw(lt) { const q = ease(lt / 420); o.style.transform = `translateY(${(1 - q) * H * 0.55 - lt * 0.006}px) rotate(${tilt + (1 - q) * 6}deg)`; } };
+  },
+  // a number that counts up, with a label strip
+  stat(b) {
+    const box = el("div", "center"); const o = el("div", "obj"); box.appendChild(o); o.style.textAlign = "center";
+    const num = el("div", "big"); o.appendChild(num); num.textContent = (b.prefix || "") + b.value + (b.suffix || ""); fit(num, box);
+    if (b.sub) o.appendChild(el("div", "sub", marked(b.sub, b.submark)));
+    const v = Number(b.value), dec = String(b.value).includes(".") ? 1 : 0;
+    return { node: box, draw(lt) { const p = ease(lt / (b.count_ms || 900)); num.textContent = (b.prefix || "") + (v * p).toFixed(dec).replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (b.suffix || "");
+      o.style.transform = `scale(${1 + lt * 0.00002})`; } };
+  },
+  // a real screenshot or photo, pinned like a print, slow push-in (Ken Burns)
+  photo(b) {
+    const box = el("div", "center"); const o = el("div", "obj shade"); box.appendChild(o);
+    const ph = el("div", "photo"); const win = el("div", "win"); const im = el("img"); im.src = b.img; win.appendChild(im); ph.appendChild(win);
+    const wpx = (b.width || 62) / 100 * W; win.style.width = wpx + "px"; win.style.height = wpx / (b.ratio || 16 / 10) + "px";
+    if (b.caption) ph.appendChild(el("div", "cap", esc(b.caption)));
+    o.appendChild(ph); const tilt = b.tilt ?? 1.8;
+    return { node: box, draw(lt) { const q = back(lt / 450); o.style.transform = `scale(${0.82 + 0.18 * q}) rotate(${tilt * q}deg) translateY(${-lt * 0.005}px)`;
+      im.style.transform = `scale(${1.04 + lt * 0.000035})`; } };
+  },
+  // a cut-out object (transparent PNG, e.g. from the image-gen skill) dropped onto the colour blocks
+  cutout(b) {
+    const box = el("div", "center"); const o = el("div", "obj shade cut"); box.appendChild(o);
+    const im = el("img"); im.src = b.img; im.style.height = (b.size || 62) / 100 * H + "px"; o.appendChild(im);
+    const x = (b.x || 0) / 100 * W;
+    return { node: box, draw(lt) { const q = back(lt / 420); o.style.transform = `translate(${x}px, ${(1 - q) * -H * 0.7 + Math.sin(lt / 900) * U * 0.4}px) rotate(${(1 - q) * 10 + (b.tilt ?? -3)}deg)`; } };
+  },
+  // a numbered list; each item lands on the word it is said with
+  list(b) {
+    const box = el("div", "center"); const o = el("div", "obj shade"); box.appendChild(o);
+    const p = el("div", "paper list"); p.style.minWidth = W * 0.45 + "px";
+    if (b.label) p.appendChild(el("div", "label", esc(b.label)));
+    const rows = b.items.map((it, i) => { const r = el("div", "row"); r.appendChild(el("div", "n", String(i + 1).padStart(2, "0")));
+      r.appendChild(el("div", "t", esc(it))); p.appendChild(r); return r; });
+    o.appendChild(p);
+    return { node: box, draw(lt, t) { o.style.transform = `rotate(-1.2deg) translateY(${-lt * 0.005}px)`;
+      rows.forEach((r, i) => { const at = (b._items_ms || [])[i] ?? (b._start + i * 500); const q = ease((t - at) / 260);
+        r.style.opacity = q; r.style.transform = `translateX(${(1 - q) * -U * 4}px)`; }); } };
+  },
+  // a line chart that draws itself; the last point gets a tag
+  chart(b) {
+    const box = el("div"); box.style.position = "absolute"; box.style.inset = "0";
+    const pts = b.points, mx = Math.max(...pts), mn = Math.min(0, ...pts);
+    const X = (i) => W * 0.14 + i / (pts.length - 1) * W * 0.72, Y = (v) => H * 0.78 - (v - mn) / (mx - mn || 1) * H * 0.5;
+    const ns = "http://www.w3.org/2000/svg", svg = document.createElementNS(ns, "svg"); svg.setAttribute("width", W); svg.setAttribute("height", H);
+    const axis = document.createElementNS(ns, "path"); axis.setAttribute("d", `M${W * .12} ${H * .78} H${W * .88}`); axis.setAttribute("stroke", "#F2EAD8"); axis.setAttribute("stroke-width", U * .25); axis.setAttribute("opacity", .5);
+    const line = document.createElementNS(ns, "path"); line.setAttribute("d", pts.map((v, i) => (i ? "L" : "M") + X(i) + " " + Y(v)).join(" "));
+    line.setAttribute("fill", "none"); line.setAttribute("stroke", "#F5C518"); line.setAttribute("stroke-width", U * .55); line.setAttribute("stroke-linecap", "round"); line.setAttribute("stroke-linejoin", "round");
+    svg.appendChild(axis); svg.appendChild(line); box.appendChild(svg);
+    const tag = el("div", "tag y", esc(b.end_label || "")); box.appendChild(tag);
+    if (b.label) { const l = el("div", "tag", esc(b.label)); l.style.left = W * .12 + "px"; l.style.top = H * .12 + "px"; box.appendChild(l); }
+    let len = 0;
+    return { node: box, draw(lt) { if (!len) { len = line.getTotalLength(); line.style.strokeDasharray = len; }
+      const q = ease(lt / (b.draw_ms || 1600)); line.style.strokeDashoffset = len * (1 - q);
+      const pt = line.getPointAtLength(len * q); tag.style.left = pt.x + U + "px"; tag.style.top = pt.y - U * 4 + "px"; tag.style.opacity = b.end_label ? clamp((q - .9) * 10, 0, 1) : 0;
+      svg.style.transform = box.style.transform = `scale(${1 + lt * 0.00002})`; } };
+  },
+};
+
+// ---------- build every beat once; render(t) only moves things ----------
+const beats = S.beats.map((b, i) => {
+  const node = el("div", "beat"); const fl = field(b, i); node.appendChild(fl);
+  if (fl.dataset.light) node.style.setProperty("--big-color", "var(--ink)");
+  if (fl.dataset.accent) node.classList.add("on-accent");
+  const d = DEV[b.device](b); node.appendChild(d.node);
+  const tags = (b.tags || []).map((tg) => { const e = el("div", "tag" + (tg.yellow ? " y" : ""), esc(tg.text)); e.style.left = (tg.x ?? 6) / 100 * W + "px"; e.style.top = (tg.y ?? 8) / 100 * H + "px"; node.appendChild(e); return { e, tg }; });
+  stage.appendChild(node);
+  return { b, node, d, tags, marks: [...node.querySelectorAll("mark")] };
+});
+stage.appendChild(grain);
+
+window.render = (ms) => {
+  let cur = 0; for (let i = 0; i < beats.length; i++) if (ms >= beats[i].b._start) cur = i;
+  beats.forEach((x, i) => { x.node.style.display = i === cur ? "block" : "none"; });
+  const x = beats[cur], tq = twos(ms), lt = tq - x.b._start;
+  x.node.querySelectorAll(".big").forEach((e) => e._fit && e._fit());
+  x.d.draw(lt, tq);
+  // a slow camera push about the centre plus a drift of the colour blocks, so no beat ever holds still
+  // (a whole-frame translate would push content off screen; scaling about the centre doesn't)
+  x.node.style.transformOrigin = "50% 50%";
+  x.node.style.transform = `scale(${1 + Math.min(lt, 8000) * 0.000024})`;
+  x.node.firstChild.style.transform = `translate(${Math.min(lt, 8000) * -0.012}px, ${Math.min(lt, 8000) * 0.006}px)`;
+  // highlighter: sweeps left to right in 350 ms, starting on the word it is said with
+  x.marks.forEach((m, k) => { const at = (x.b._marks_ms || [])[k] ?? (x.b._start + 600); const q = ease((tq - at) / 350);
+    m.style.backgroundSize = `${q * 100}% 78%`;
+    m.style.color = q > 0.4 ? "var(--on-mark)" : "";  // switch to the colour that reads on the highlighter as the marker passes
+  });
+  x.tags.forEach(({ e, tg }) => { const at = tg._ms ?? x.b._start + 250; const q = ease((tq - at) / 220); e.style.opacity = q; e.style.transform = `translateX(${(1 - q) * -U * 3}px) rotate(${tg.tilt ?? -2}deg)`; });
+  // the whole frame breathes a little so a held beat never reads frozen
+  grain.style.transform = `translate(${Math.floor(rnd(Math.floor(tq / 83)) * 40) - 20}px, ${Math.floor(rnd(Math.floor(tq / 83) + 7) * 40) - 20}px)`;
+};
+window.READY = Promise.all([document.fonts.ready, ...[...document.images].map((i) => i.complete ? 1 : new Promise((r) => { i.onload = i.onerror = r; }))]);
+</script>

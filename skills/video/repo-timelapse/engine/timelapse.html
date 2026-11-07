@@ -1,0 +1,669 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: "Geist"; src: url("fonts/Geist.woff2") format("woff2"); font-weight: 100 900; }
+  @font-face { font-family: "Geist Mono"; src: url("fonts/GeistMono.woff2") format("woff2"); font-weight: 100 900; }
+  html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Repo timelapse renderer. window.render(t) draws the frame at t seconds and depends on nothing else,
+// so frames can be rendered in any order. Inputs: window.DATA (from extract.py) and window.OPTS.
+(() => {
+const D = window.DATA, O = Object.assign({
+  width: 1920, height: 1080, duration: 30, theme: "dark", highlight: null, grow: "area",
+  title: null, subtitle: null, titleCard: true, endCard: true, endText: null,
+}, window.OPTS || {});
+
+const W = O.width, H = O.height, portrait = H > W;
+const u = (portrait ? W : H) / 1080;          // layout unit: 1px at 1080p
+const cv = document.getElementById("c");
+cv.width = W; cv.height = H; cv.style.width = W + "px"; cv.style.height = H + "px";
+const ctx = cv.getContext("2d");
+
+// ---------- theme ----------
+const THEMES = {
+  dark: { bg: "#0b0c0f", bg2: "#14161b", text: "#eeeef2", dim: "rgba(238,238,242,0.52)", faint: "rgba(238,238,242,0.16)",
+          dirFill: "rgba(255,255,255,0.030)", dirLine: "rgba(255,255,255,0.06)", dirLabel: "rgba(238,238,242,0.50)",
+          tileL: 0.68, mutedL: 0.46, glow: [255, 255, 255], tileText: "rgba(8,9,12,0.62)", shade: 0.0, accent: "#ffd27a" },
+  light: { bg: "#f4f2ee", bg2: "#fbfaf7", text: "#15161a", dim: "rgba(21,22,26,0.55)", faint: "rgba(21,22,26,0.14)",
+           dirFill: "rgba(0,0,0,0.035)", dirLine: "rgba(0,0,0,0.06)", dirLabel: "rgba(21,22,26,0.55)",
+           tileL: 0.74, mutedL: 0.84, glow: [255, 255, 255], tileText: "rgba(10,10,14,0.60)", shade: 0.0, accent: "#c2410c" },
+};
+const T = THEMES[O.theme] || THEMES.dark;
+
+// language -> [hue, chroma] in OKLCH; low chroma for docs, config and assets so code stands out
+const LANG = {
+  TypeScript: [252, .13], JavaScript: [95, .14], Python: [158, .12], Go: [212, .11], Rust: [45, .13],
+  Java: [62, .12], Kotlin: [300, .13], Swift: [35, .15], C: [270, .07], "C++": [345, .12], "C#": [150, .13],
+  Ruby: [20, .15], PHP: [280, .10], Dart: [225, .12], Elixir: [305, .10], Lua: [265, .10], Zig: [75, .13],
+  Scala: [15, .14], R: [240, .10], Shell: [128, .13], HTML: [32, .15], CSS: [332, .13], Vue: [160, .12],
+  Svelte: [35, .16], Astro: [290, .14], SQL: [200, .09], GLSL: [320, .10], Notebook: [55, .13],
+  Markdown: [250, .025], Config: [80, .03], Asset: [200, .02], Other: [0, 0],
+};
+const MUTED = new Set(["Markdown", "Config", "Asset", "Other"]);
+
+function oklch(L, C, h) {  // -> [r,g,b] 0..255, gamut-clipped
+  const a = C * Math.cos(h * Math.PI / 180), b = C * Math.sin(h * Math.PI / 180);
+  const l_ = L + 0.3963377774 * a + 0.2158037573 * b, m_ = L - 0.1055613458 * a - 0.0638541728 * b, s_ = L - 0.0894841775 * a - 1.2914855480 * b;
+  const l = l_ ** 3, m = m_ ** 3, s = s_ ** 3;
+  const lin = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.7076147010 * s];
+  return lin.map(x => { x = Math.min(1, Math.max(0, x)); return 255 * (x <= 0.0031308 ? 12.92 * x : 1.055 * x ** (1 / 2.4) - 0.055); });
+}
+const rgb = (c, a = 1) => `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`;
+const mixc = (c1, c2, k) => [c1[0] + (c2[0] - c1[0]) * k, c1[1] + (c2[1] - c1[1]) * k, c1[2] + (c2[2] - c1[2]) * k];
+const hexc = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const BG = hexc(T.bg);
+function langColor(lang, jitter = 0, muted = false) {
+  const [h, c] = LANG[lang] || LANG.Other;
+  let L = (MUTED.has(lang) ? (O.theme === "light" ? 0.80 : 0.50) : T.tileL) + jitter;
+  let C = c;
+  if (muted) { C *= 0.12; L = O.theme === "light" ? 0.86 + jitter * 0.5 : 0.30 + jitter * 0.5; }
+  return oklch(L, C, h);
+}
+
+// ---------- easing / helpers ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x));
+const lerp = (a, b, k) => a + (b - a) * k;
+const easeIO = x => x < .5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
+const easeOut = x => 1 - (1 - x) ** 3;
+const smooth = (a, b, x) => { const k = clamp((x - a) / (b - a)); return k * k * (3 - 2 * k); };
+const fmt = n => Math.round(n).toLocaleString("en-US");
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const dateAt = (t, tz) => new Date((t + tz * 60) * 1000);
+const fmtDate = d => `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}, ${d.getUTCFullYear()}`;
+const pad2 = n => String(n).padStart(2, "0");
+function hash01(i) { let x = (i + 1) * 2654435761 >>> 0; x ^= x >>> 15; x = Math.imul(x, 2246822519) >>> 0; x ^= x >>> 13; return (x >>> 0) / 4294967296; }
+
+// ---------- data prep ----------
+const files = D.files.map(([p, lang]) => ({ p, lang }));
+// strip the folder every file shares, so a --path run starts inside that folder
+let common = null;
+for (const f of files) {
+  const parts = f.p.split("/").slice(0, -1);
+  if (common === null) common = parts;
+  else { let i = 0; while (i < common.length && i < parts.length && common[i] === parts[i]) i++; common = common.slice(0, i); }
+}
+common = common || [];
+const rootPrefix = common.length ? common.join("/") + "/" : "";
+for (const [i, f] of files.entries()) {
+  f.rel = f.p.slice(rootPrefix.length);
+  const parts = f.rel.split("/");
+  f.name = parts[parts.length - 1];
+  f.dirs = [];
+  for (let k = 1; k < parts.length; k++) f.dirs.push(parts.slice(0, k).join("/"));
+  f.jit = (hash01(i) - 0.5) * 0.07;
+}
+let hl = O.highlight ? O.highlight.replace(/^\/+|\/+$/g, "") : null;
+if (hl && rootPrefix && hl.startsWith(rootPrefix)) hl = hl.slice(rootPrefix.length);
+const inHL = f => !hl || f.rel === hl || f.rel.startsWith(hl + "/");
+
+const E = D.events, N = E.length;
+// states: S[0] = before the first event, S[k+1] = after event k
+const CHK = 48, checkpoints = [];
+const firstSeen = new Map();       // key -> state index it first appears in
+const stats = [];                  // per state
+{
+  // running totals, updated only for the files each commit touches
+  const sizes = new Map(), langs = {};
+  let commits = 0, lines = 0, weight = 0, hlLines = 0;
+  const put = (f, v, sign, s) => {
+    weight += sign * Math.max(1, v.w);
+    if (!v.b) { lines += sign * v.w; const l = files[f].lang; langs[l] = (langs[l] || 0) + sign * v.w; if (hl && inHL(files[f])) hlLines += sign * v.w; }
+    if (sign > 0 && !firstSeen.has("f" + f)) { firstSeen.set("f" + f, s); for (const d of files[f].dirs) if (!firstSeen.has("d" + d)) firstSeen.set("d" + d, s); }
+  };
+  const set = (f, v, s) => { const old = sizes.get(f); if (old) put(f, old, -1, s); if (v) { sizes.set(f, v); put(f, v, 1, s); } else sizes.delete(f); };
+  const snap = s => {
+    const l = {}; for (const k in langs) if (langs[k] > 0) l[k] = langs[k];
+    stats.push({ lines, weight, files: sizes.size, commits, langs: l, hlLines });
+    if (s % CHK === 0) checkpoints[s / CHK] = new Map(sizes);
+  };
+  for (const [f, w, b] of D.baseline) set(f, { w, b }, 0);
+  snap(0);
+  for (let k = 0; k < N; k++) {
+    for (const [f, w, kind, b] of E[k].ch) set(f, kind === "D" ? null : { w: w || 0, b }, k + 1);
+    commits += E[k].n;
+    snap(k + 1);
+  }
+}
+const maxWeight = Math.max(1, ...stats.map(s => s.weight));
+const finalS = stats[N];
+const totalCommits = finalS.commits;
+
+function sizesAt(s) {
+  const base = Math.floor(s / CHK);
+  const m = new Map(checkpoints[base]);
+  for (let k = base * CHK; k < s; k++) for (const [f, w, kind, b] of E[k].ch) { if (kind === "D") m.delete(f); else m.set(f, { w: w || 0, b }); }
+  return m;
+}
+
+// ---------- time mapping ----------
+const TITLE = O.titleCard ? Math.min(2.6, O.duration * 0.12) : 0;
+const END = O.endCard ? Math.min(3.6, O.duration * 0.16) : 0;
+const HOLD = Math.min(1.2, O.duration * 0.04);
+const h0 = TITLE > 0 ? TITLE - 0.35 : 0.25;               // first commit lands here
+const h1 = O.duration - END - HOLD;                         // last commit lands here
+const V = [];                                               // video time of each event
+{
+  const gaps = [];
+  for (let k = 1; k < N; k++) gaps.push(Math.log1p(Math.max(0, E[k].t - E[k - 1].t) / 1800));
+  const mean = gaps.reduce((a, b) => a + b, 0) / Math.max(1, gaps.length) || 1;
+  // half "every commit gets equal time", half "real gaps", compressed with a log so quiet weeks pass quickly
+  const w = gaps.map(g => Math.min(4, 0.5 + 0.5 * g / mean));
+  const tot = w.reduce((a, b) => a + b, 0) || 1;
+  let acc = 0; V.push(h0);
+  for (const x of w) { acc += x; V.push(h0 + (h1 - h0) * acc / tot); }
+  if (N === 1) V[0] = (h0 + h1) / 2;
+}
+const MORPH = 0.75;
+const morphLen = k => k < N - 1 ? Math.min(MORPH, 0.92 * (V[k + 1] - V[k])) : MORPH;
+function eventAt(v) {  // last event with V <= v, or -1
+  let lo = 0, hi = N - 1, r = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (V[m] <= v) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+function stateAt(v) {  // -> {a, b, u}: morphing from state a to state b by u
+  const k = eventAt(v);
+  if (k < 0) return { a: 0, b: 0, u: 1, k };
+  const m = morphLen(k), x = clamp((v - V[k]) / m);
+  const shape = clamp((m - 0.12) / 0.4);
+  return { a: k, b: k + 1, u: lerp(x, easeIO(x), shape), k };
+}
+function realTimeAt(v) {
+  const k = eventAt(v);
+  if (k < 0) return E[0].t;
+  if (k >= N - 1) return E[N - 1].t;
+  return lerp(E[k].t, E[k + 1].t, clamp((v - V[k]) / (V[k + 1] - V[k])));
+}
+
+// ---------- captions ----------
+const captions = [];
+{
+  const holdC = 1.15;
+  let i = 0;
+  while (i < N) {
+    let best = i, j = i;
+    while (j < N && V[j] < V[i] + holdC) { if (E[j].s > E[best].s) best = j; j++; }
+    captions.push({ v: V[i], e: best });
+    i = Math.max(j, i + 1);
+  }
+}
+function captionAt(v) {
+  let r = -1;
+  for (let lo = 0, hi = captions.length - 1; lo <= hi;) { const m = (lo + hi) >> 1; if (captions[m].v <= v) { r = m; lo = m + 1; } else hi = m - 1; }
+  return r;
+}
+
+// ---------- activity sparkline bins ----------
+const BINS = portrait ? 56 : 110;
+const tA = E[0].t, tB = Math.max(E[N - 1].t, E[0].t + 1);
+const bins = new Array(BINS).fill(0);
+for (const e of E) bins[Math.min(BINS - 1, Math.floor((e.t - tA) / (tB - tA) * BINS))] += e.add + e.del;
+const binMax = Math.max(1, ...bins.map(Math.sqrt));
+
+// ---------- frame layout ----------
+const M = (portrait ? 64 : 72) * u;
+const R = {};
+if (portrait) {
+  R.top = 150 * u;                         // leave room for platform UI at the top
+  R.map = { x: M, y: R.top + 250 * u, w: W - 2 * M, h: 0 };
+  R.caption = { x: M, y: H - 560 * u, w: W - 2 * M - 70 * u };
+  R.spark = { x: M, y: H - 380 * u, w: W - 2 * M, h: 56 * u };
+  R.map.h = R.caption.y - 70 * u - R.map.y;
+} else {
+  R.top = M;
+  R.map = { x: M, y: M + 150 * u, w: W - 2 * M, h: 0 };
+  R.caption = { x: M, y: H - M - 128 * u, w: W - 2 * M };
+  R.spark = { x: M, y: H - M - 44 * u, w: W - 2 * M, h: 40 * u };
+  R.map.h = R.caption.y - 52 * u - R.map.y;
+}
+
+// ---------- treemap ----------
+const GAP = Math.max(0.6, 1.1 * u), DPAD = Math.max(1, 3 * u), HEAD = 17 * u;
+function worst(row, sum, side) {
+  let mx = -Infinity, mn = Infinity;
+  for (const r of row) { mx = Math.max(mx, r.area); mn = Math.min(mn, r.area); }
+  const s2 = side * side, sum2 = sum * sum;
+  return Math.max(s2 * mx / sum2, sum2 / (s2 * mn));
+}
+function squarify(items, x, y, w, h, out) {  // keeps the given order, so tiles stay where they were born
+  let i = 0;
+  while (i < items.length) {
+    const side = Math.min(w, h);
+    if (side <= 0) { for (; i < items.length; i++) out.push([items[i], x, y, 0, 0]); return; }
+    const row = [items[i]]; let sum = items[i].area; i++;
+    while (i < items.length) {
+      const nxt = items[i];
+      if (worst([...row, nxt], sum + nxt.area, side) <= worst(row, sum, side)) { row.push(nxt); sum += nxt.area; i++; }
+      else break;
+    }
+    if (w >= h) {   // column on the left
+      const cw = sum / h; let yy = y;
+      for (const r of row) { const rh = r.area / cw; out.push([r, x, yy, cw, rh]); yy += rh; }
+      x += cw; w -= cw;
+    } else {        // row on top
+      const rh = sum / w; let xx = x;
+      for (const r of row) { const rw = r.area / rh; out.push([r, xx, y, rw, rh]); xx += rw; }
+      y += rh; h -= rh;
+    }
+  }
+}
+function regionFor(s) {
+  const a = R.map;
+  const frac = O.grow === "fill" ? 1 : clamp(stats[s].weight / maxWeight, 0.035, 1);
+  const k = Math.sqrt(frac), w = a.w * k, h = a.h * k;
+  return { x: a.x + (a.w - w) / 2, y: a.y + (a.h - h) / 2, w, h };
+}
+const layoutCache = new Map();
+function layoutOf(s) {
+  if (layoutCache.has(s)) return layoutCache.get(s);
+  const sizes = sizesAt(s);
+  const root = { key: "d", kids: new Map(), w: 0, depth: 0 };
+  const dirs = new Map([["", root]]);
+  for (const [f, v] of sizes) {
+    const fi = files[f], w = Math.max(1, v.w);
+    let node = root; root.w += w;
+    for (let d = 0; d < fi.dirs.length; d++) {
+      const key = fi.dirs[d];
+      let n = dirs.get(key);
+      if (!n) { n = { key: "d" + key, path: key, name: key.split("/").pop(), kids: new Map(), w: 0, depth: d + 1 }; dirs.set(key, n); node.kids.set(n.key, n); }
+      n.w += w; node = n;
+    }
+    node.kids.set("f" + f, { key: "f" + f, f, w });
+  }
+  const out = new Map();
+  const reg = regionFor(s);
+  const order = (a, b) => (firstSeen.get(a.key) - firstSeen.get(b.key)) || (a.key < b.key ? -1 : 1);
+  (function lay(node, x, y, w, h) {
+    let head = false;
+    if (node.depth > 0) {
+      head = node.depth <= 3 && w > 74 * u && h > 46 * u;
+      out.set(node.key, { x, y, w, h, dir: true, depth: node.depth, head, name: node.name, path: node.path });
+      x += DPAD; y += DPAD + (head ? HEAD : 0); w -= 2 * DPAD; h -= 2 * DPAD + (head ? HEAD : 0);
+      if (w <= 0 || h <= 0) return;
+    }
+    const kids = [...node.kids.values()].sort(order);
+    const scale = (w * h) / node.w;
+    const items = kids.map(c => ({ c, area: c.w * scale }));
+    const placed = [];
+    squarify(items, x, y, w, h, placed);
+    for (const [it, rx, ry, rw, rh] of placed) {
+      const c = it.c;
+      if (c.kids) lay(c, rx, ry, rw, rh);
+      else out.set(c.key, { x: rx + GAP / 2, y: ry + GAP / 2, w: Math.max(0, rw - GAP), h: Math.max(0, rh - GAP), f: c.f });
+    }
+  })(root, reg.x, reg.y, reg.w, reg.h);
+  layoutCache.set(s, out);
+  if (layoutCache.size > 8) layoutCache.delete(layoutCache.keys().next().value);
+  return out;
+}
+
+// ---------- text helpers ----------
+const SANS = "Geist, system-ui, sans-serif", MONO = "'Geist Mono', ui-monospace, monospace";
+const font = (wt, px, fam = SANS) => `${wt} ${px}px ${fam}`;
+const mcache = new Map();
+function tw(text, f) { const k = f + "|" + text; let w = mcache.get(k); if (w === undefined) { ctx.font = f; w = ctx.measureText(text).width; if (mcache.size > 20000) mcache.clear(); mcache.set(k, w); } return w; }
+function fit(text, f, maxW) {
+  if (tw(text, f) <= maxW) return text;
+  let lo = 0, hi = text.length;
+  while (lo < hi) { const m = (lo + hi + 1) >> 1; if (tw(text.slice(0, m) + "…", f) <= maxW) lo = m; else hi = m - 1; }
+  return lo > 0 ? text.slice(0, lo) + "…" : "";
+}
+function wrap(str, f, maxW, maxLines) {
+  const words = str.split(" "), lines = []; let cur = "";
+  for (let i = 0; i < words.length; i++) {
+    const t = cur ? cur + " " + words[i] : words[i];
+    if (tw(t, f) <= maxW || !cur) { cur = t; continue; }
+    if (lines.length === maxLines - 1) { cur = cur + " " + words.slice(i).join(" "); break; }
+    lines.push(cur); cur = words[i];
+  }
+  lines.push(cur);
+  lines[lines.length - 1] = fit(lines[lines.length - 1], f, maxW);
+  return lines;
+}
+function text(str, x, y, f, color, align = "left", base = "alphabetic") {
+  ctx.font = f; ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = base; ctx.fillText(str, x, y);
+}
+function num(str, x, y, f, color, align = "left") {  // digits in fixed cells so counters don't wobble
+  const dw = tw("0", f);
+  const cells = [...str].map(ch => /[0-9]/.test(ch) ? dw : tw(ch, f));
+  const total = cells.reduce((p, q) => p + q, 0);
+  let xx = align === "right" ? x - total : align === "center" ? x - total / 2 : x;
+  ctx.font = f; ctx.fillStyle = color; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  [...str].forEach((ch, i) => { ctx.fillText(ch, xx + cells[i] / 2, y); xx += cells[i]; });
+  return total;
+}
+function rrect(x, y, w, h, r) { ctx.beginPath(); if (w < 2 * r || h < 2 * r) ctx.rect(x, y, w, h); else ctx.roundRect(x, y, w, h, r); }
+
+// ---------- drawing ----------
+const tileColorCache = new Map();
+function baseColor(f) {
+  let c = tileColorCache.get(f);
+  if (!c) { const fi = files[f]; c = langColor(fi.lang, fi.jit, hl && !inHL(fi)); tileColorCache.set(f, c); }
+  return c;
+}
+
+function glowMap(v) {  // fileId -> [strength 0..1, kind]
+  const g = new Map(), k = eventAt(v);
+  for (let j = k; j >= 0 && v - V[j] < 2.2; j--) {
+    const dt = v - V[j];
+    const s = Math.exp(-dt / 0.7);
+    const src = new Set(E[j].ch.filter(c => c.length > 4).map(c => c[4]));
+    for (const c of E[j].ch) {
+      if (src.has(c[0])) continue;                          // the old half of a rename
+      const kind = c.length > 4 ? "R" : c[2], sk = kind === "R" ? s * 0.45 : s;
+      const cur = g.get(c[0]); if (!cur || cur[0] < sk) g.set(c[0], [sk, kind]);
+    }
+  }
+  return g;
+}
+
+function drawBackground() {
+  ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+  const gr = ctx.createRadialGradient(W / 2, H * 0.45, 0, W / 2, H * 0.45, Math.max(W, H) * 0.75);
+  gr.addColorStop(0, T.bg2); gr.addColorStop(1, T.bg);
+  ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H);
+}
+
+function drawMap(v, alpha = 1) {
+  const st = stateAt(v);
+  const A = layoutOf(st.a), B = layoutOf(st.b), x = st.u;
+  const glow = glowMap(v);
+  ctx.save(); ctx.globalAlpha = alpha;
+  const keys = new Set([...A.keys(), ...B.keys()]);
+  // renamed files fly from their old place instead of vanishing and reappearing
+  const movedTo = new Map(), movedFrom = new Set();
+  if (st.k >= 0 && st.a !== st.b) for (const c of E[st.k].ch) if (c.length > 4) { movedTo.set("f" + c[0], "f" + c[4]); movedFrom.add("f" + c[4]); }
+  const dirs = [], tiles = [];
+  for (const key of keys) {
+    const a = A.get(key), b = B.get(key);
+    let r, op = 1, gone = false;
+    if (!b && movedFrom.has(key)) continue;
+    const from = !a && b && movedTo.has(key) ? A.get(movedTo.get(key)) : null;
+    if (from) r = { x: lerp(from.x, b.x, x), y: lerp(from.y, b.y, x), w: lerp(from.w, b.w, x), h: lerp(from.h, b.h, x) };
+    else if (a && b) r = { x: lerp(a.x, b.x, x), y: lerp(a.y, b.y, x), w: lerp(a.w, b.w, x), h: lerp(a.h, b.h, x) };
+    else if (b) { const k = easeOut(x); r = { x: b.x + b.w * (1 - k) / 2, y: b.y + b.h * (1 - k) / 2, w: b.w * k, h: b.h * k }; op = clamp(x * 2); }
+    else { const k = 1 - x; r = { x: a.x + a.w * (1 - k) / 2, y: a.y + a.h * (1 - k) / 2, w: a.w * k, h: a.h * k }; op = 1 - x; gone = true; }
+    const src = b || a;
+    if (src.dir) dirs.push({ r, op, src, a, b }); else tiles.push({ r, op, f: src.f, gone });
+  }
+  // folders
+  dirs.sort((p, q) => p.src.depth - q.src.depth);
+  for (const d of dirs) {
+    if (d.r.w < 2 || d.r.h < 2) continue;
+    ctx.globalAlpha = alpha * d.op;
+    ctx.fillStyle = T.dirFill; rrect(d.r.x, d.r.y, d.r.w, d.r.h, 4 * u); ctx.fill();
+  }
+  // files
+  for (const t of tiles) {
+    const { r } = t;
+    if (r.w < 0.4 || r.h < 0.4) continue;
+    let c = baseColor(t.f);
+    const gl = glow.get(t.f);
+    let g = 0;
+    if (gl && !(hl && !inHL(files[t.f]))) { g = gl[0] * (gl[1] === "A" ? 1 : 0.85); c = mixc(c, gl[1] === "D" ? [255, 92, 80] : T.glow, g * (O.theme === "light" ? 0.45 : 0.6)); }
+    if (t.gone) c = mixc(c, [235, 80, 70], 0.6);
+    ctx.globalAlpha = alpha * t.op;
+    ctx.fillStyle = rgb(c);
+    const rad = Math.min(3 * u, r.w / 3, r.h / 3);
+    if (rad > 0.8) { rrect(r.x, r.y, r.w, r.h, rad); ctx.fill(); } else ctx.fillRect(r.x, r.y, r.w, r.h);
+    if (g > 0.05 && r.w > 3 && r.h > 3) {
+      ctx.save();
+      ctx.shadowColor = rgb(mixc(baseColor(t.f), [255, 255, 255], 0.4), 0.9 * g);
+      ctx.shadowBlur = 22 * u * g;
+      ctx.strokeStyle = O.theme === "light" ? `rgba(20,20,24,${0.55 * g})` : `rgba(255,255,255,${0.75 * g})`;
+      ctx.lineWidth = Math.max(1, 1.5 * u);
+      rrect(r.x, r.y, r.w, r.h, rad); ctx.stroke();
+      ctx.restore();
+    }
+    if (r.w > 64 * u && r.h > 24 * u) {
+      const fs = clamp(Math.min(r.h * 0.42, 12.5 * u), 0, 12.5 * u);
+      const f = font(500, fs);
+      const label = fit(files[t.f].name, f, r.w - 12 * u);
+      if (label) text(label, r.x + 6 * u, r.y + 6 * u, f, T.tileText, "left", "top");
+    }
+  }
+  // folder labels on top
+  for (const d of dirs) {
+    const ha = d.a && d.a.head ? 1 : 0, hb = d.b && d.b.head ? 1 : 0;
+    const ho = d.a && d.b ? lerp(ha, hb, x) : (d.b ? hb : ha) * d.op;
+    if (ho < 0.02 || d.r.w < 40 * u) continue;
+    const isHL = hl && d.src.path === hl;
+    const top = d.src.depth === 1;
+    const f = font(top ? 600 : 500, (top ? 12 : 11) * u, MONO);
+    const label = fit(d.src.name + "/", f, d.r.w - 14 * u);
+    ctx.globalAlpha = alpha * ho;
+    text(label, d.r.x + 6 * u, d.r.y + 13.5 * u, f, isHL ? T.accent : (top ? T.text : T.dirLabel));
+  }
+  // highlighted folder outline
+  if (hl) {
+    const d = dirs.find(d => d.src.path === hl);
+    if (d && d.r.w > 2) {
+      ctx.globalAlpha = alpha * d.op; ctx.strokeStyle = T.accent; ctx.lineWidth = 2 * u;
+      rrect(d.r.x - 1 * u, d.r.y - 1 * u, d.r.w + 2 * u, d.r.h + 2 * u, 5 * u); ctx.stroke();
+    }
+  }
+  ctx.restore();
+  return st;
+}
+
+function mixStats(st) {
+  const a = stats[st.a], b = stats[st.b], x = st.u;
+  const langs = {};
+  for (const l of new Set([...Object.keys(a.langs), ...Object.keys(b.langs)])) langs[l] = lerp(a.langs[l] || 0, b.langs[l] || 0, x);
+  return { lines: lerp(a.lines, b.lines, x), files: lerp(a.files, b.files, x), commits: b.commits, hlLines: lerp(a.hlLines, b.hlLines, x), langs };
+}
+
+function langBar(langs, x, y, w, h, labels, alpha = 1, maxN = 4) {
+  const tot = Object.values(langs).reduce((p, q) => p + q, 0);
+  if (tot <= 0) return;
+  const sorted = Object.entries(langs).filter(e => e[1] > 0).sort((p, q) => q[1] - p[1]);
+  let xx = x;
+  ctx.save(); ctx.globalAlpha = alpha;
+  rrect(x, y, w, h, h / 2); ctx.clip();
+  for (const [l, n] of sorted) { const ww = w * n / tot; ctx.fillStyle = rgb(langColor(l)); ctx.fillRect(xx, y, ww + 0.5, h); xx += ww; }
+  ctx.restore();
+  if (!labels) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const f = font(500, 13 * u, MONO);
+  let lx = x;
+  const items = sorted.slice(0, maxN);
+  const ly = y + h + 20 * u;
+  for (const [l, n] of items) {
+    const pct = Math.round(100 * n / tot);
+    if (pct < 1) continue;
+    const s = `${l} ${pct}%`;
+    const need = 14 * u + tw(s, f);
+    if (lx + need > x + w + 1) break;
+    ctx.fillStyle = rgb(langColor(l)); ctx.beginPath(); ctx.arc(lx + 4 * u, ly - 4.5 * u, 4 * u, 0, Math.PI * 2); ctx.fill();
+    text(s, lx + 13 * u, ly, f, T.dim);
+    lx += need + 16 * u;
+  }
+  ctx.restore();
+}
+
+function drawHUD(v, st, alpha) {
+  if (alpha <= 0) return;
+  ctx.save(); ctx.globalAlpha = alpha;
+  const s = mixStats(st);
+  const k = Math.max(0, st.k);
+  const tNow = realTimeAt(v), ev = E[k];
+  const local = dateAt(tNow, ev.tz), evLocal = dateAt(ev.t, ev.tz);
+  const day = Math.floor((tNow - E[0].t) / 86400) + 1;
+  const name = O.title || D.name;
+
+  // left: project, date, time
+  const x0 = M, y0 = R.top;
+  ctx.fillStyle = T.accent; ctx.beginPath(); ctx.arc(x0 + 5 * u, y0 + 9 * u, 4.5 * u, 0, Math.PI * 2); ctx.fill();
+  text(name, x0 + 18 * u, y0 + 15 * u, font(500, 16 * u, MONO), T.dim);
+  const dateF = font(600, (portrait ? 58 : 56) * u);
+  text(fmtDate(local), x0 - 2 * u, y0 + 76 * u, dateF, T.text);
+  text(`${DAYS[evLocal.getUTCDay()]} ${pad2(evLocal.getUTCHours())}:${pad2(evLocal.getUTCMinutes())}  ·  day ${day}`, x0, y0 + 108 * u, font(500, 16 * u, MONO), T.dim);
+
+  // right (or below, in portrait): line counter and language bar
+  const rx = portrait ? M : W - M;
+  const align = portrait ? "left" : "right";
+  const ry = portrait ? y0 + 178 * u : y0;
+  const locF = font(600, (portrait ? 46 : 56) * u);
+  if (portrait) {
+    const lw = num(fmt(s.lines), M - 2 * u, ry + 10 * u, locF, T.text);
+    text("lines", M + lw + 12 * u, ry + 10 * u, font(500, 16 * u, MONO), T.dim);
+    text(`${fmt(s.files)} file${Math.round(s.files) === 1 ? "" : "s"}  ·  ${fmt(s.commits)} commit${s.commits === 1 ? "" : "s"}`, W - M, ry + 10 * u, font(500, 16 * u, MONO), T.dim, "right");
+    langBar(s.langs, M, ry + 30 * u, W - 2 * M, 6 * u, true, 1, 4);
+  } else {
+    text(`lines of code`, rx, y0 + 15 * u, font(500, 16 * u, MONO), T.dim, align);
+    num(fmt(s.lines), rx + 2 * u, y0 + 76 * u, locF, T.text, align);
+    text(`${fmt(s.files)} file${Math.round(s.files) === 1 ? "" : "s"}  ·  ${fmt(s.commits)} commit${s.commits === 1 ? "" : "s"}`, rx, y0 + 108 * u, font(500, 16 * u, MONO), T.dim, align);
+    const bw = 380 * u;
+    langBar(s.langs, W / 2 - bw / 2, y0 + 66 * u, bw, 6 * u, true, 1, 3);
+  }
+  if (hl) {
+    const f = font(500, 15 * u, MONO), str = `${hl}/  ${fmt(s.hlLines)} lines`;
+    if (portrait) text(str, M, ry + 84 * u, f, T.accent);
+    else text(str, W / 2, y0 + 15 * u, f, T.accent, "center");
+  }
+
+  // caption
+  const ci = captionAt(v);
+  if (ci >= 0) {
+    const c = captions[ci], e = E[c.e];
+    const since = v - c.v;
+    const capF = font(500, (portrait ? 34 : 30) * u);
+    const lines = wrap(e.m || "(no message)", capF, R.caption.w, portrait ? 2 : 1);
+    const full = lines.join("\n");
+    const cps = Math.max(55, full.length / 0.45);
+    let shown = Math.floor(since * cps);
+    const author = D.authors[e.a] || "";
+    const meta = [e.h, author, `+${fmt(e.add)} −${fmt(e.del)}`].concat(e.n > 1 ? [`${e.n} commits`] : []).join("   ");
+    const metaY = R.caption.y;
+    const mo = smooth(0, 0.18, since);
+    ctx.globalAlpha = alpha * mo;
+    text(meta, R.caption.x, metaY, font(500, 15 * u, MONO), T.dim);
+    ctx.globalAlpha = alpha;
+    const lh = (portrait ? 44 : 40) * u;
+    let cy = metaY + (portrait ? 50 : 44) * u, cx = R.caption.x;
+    for (const ln of lines) {
+      const part = ln.slice(0, Math.max(0, shown));
+      shown -= ln.length + 1;
+      text(part, cx, cy, capF, T.text);
+      if (shown < 0 && shown > -ln.length - 2) {
+        const typing = since * cps < full.length;
+        if (typing || Math.floor(since * 1.6) % 2 === 0) {
+          ctx.fillStyle = T.accent;
+          ctx.fillRect(cx + tw(part, capF) + 3 * u, cy - 25 * u * (portrait ? 1.1 : 1), 2.5 * u, 30 * u * (portrait ? 1.1 : 1));
+        }
+        break;
+      }
+      cy += lh;
+    }
+  }
+
+  // activity sparkline
+  const sp = R.spark, bw = sp.w / BINS;
+  const pos = clamp((tNow - tA) / (tB - tA));
+  for (let i = 0; i < BINS; i++) {
+    const hgt = Math.max(1.5 * u, sp.h * Math.sqrt(bins[i]) / binMax);
+    const played = (i + 0.5) / BINS <= pos;
+    ctx.fillStyle = played ? T.text : T.faint;
+    ctx.globalAlpha = alpha * (played ? 0.85 : 1);
+    rrect(sp.x + i * bw + bw * 0.18, sp.y + sp.h - hgt, bw * 0.64, hgt, Math.min(1.5 * u, bw * 0.3)); ctx.fill();
+  }
+  ctx.globalAlpha = alpha;
+  const px = sp.x + pos * sp.w;
+  ctx.fillStyle = T.accent; ctx.fillRect(px - 1 * u, sp.y - 6 * u, 2 * u, sp.h + 10 * u);
+  const lf = font(500, 13 * u, MONO);
+  const d0 = dateAt(E[0].t, E[0].tz), d1 = dateAt(E[N - 1].t, E[N - 1].tz);
+  text(fmtDate(d0), sp.x, sp.y + sp.h + 22 * u, lf, T.dim);
+  text(fmtDate(d1), sp.x + sp.w, sp.y + sp.h + 22 * u, lf, T.dim, "right");
+  ctx.restore();
+}
+
+function drawTitle(v) {
+  if (!TITLE) return;
+  const out = smooth(TITLE - 0.75, TITLE - 0.05, v);
+  if (out >= 1) return;
+  const inA = smooth(0.05, 0.6, v), inB = smooth(0.3, 0.9, v);
+  ctx.save();
+  ctx.globalAlpha = 1 - out;
+  ctx.fillStyle = T.bg; ctx.globalAlpha = (1 - out) * 0.92; ctx.fillRect(0, 0, W, H);
+  const cy = H / 2 - (portrait ? 80 : 20) * u;
+  const name = O.title || D.name;
+  const big = font(650, (portrait ? 92 : 104) * u);
+  const nm = fit(name, big, W - 2 * M);
+  ctx.globalAlpha = (1 - out) * inA;
+  text(nm, W / 2, cy + (1 - easeOut(inA)) * 18 * u - out * 10 * u, big, T.text, "center");
+  const d0 = dateAt(E[0].t, E[0].tz), d1 = dateAt(E[N - 1].t, E[N - 1].tz);
+  const sub = O.subtitle || `${fmtDate(d0)}  →  ${fmtDate(d1)}  ·  ${fmt(totalCommits)} commits`;
+  ctx.globalAlpha = (1 - out) * inB;
+  text(fit(sub, font(500, 22 * u, MONO), W - 2 * M), W / 2, cy + 58 * u + (1 - easeOut(inB)) * 12 * u, font(500, 22 * u, MONO), T.dim, "center");
+  ctx.fillStyle = T.accent; ctx.globalAlpha = (1 - out) * inB;
+  const lw = 56 * u * easeOut(inB);
+  ctx.fillRect(W / 2 - lw / 2, cy - (portrait ? 118 : 128) * u, lw, 3 * u);
+  ctx.restore();
+}
+
+function drawEnd(v) {
+  if (!END) return 0;
+  const t0 = O.duration - END;
+  const k = smooth(t0 - 0.1, t0 + 0.6, v);
+  if (k <= 0) return 0;
+  ctx.save();
+  ctx.globalAlpha = 0.86 * k; ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
+  const a1 = smooth(t0 + 0.1, t0 + 0.7, v), a2 = smooth(t0 + 0.35, t0 + 0.95, v), a3 = smooth(t0 + 0.6, t0 + 1.2, v);
+  const cy = H / 2 - (portrait ? 120 : 40) * u;
+  const s = finalS;
+  const days = Math.max(1, Math.round((E[N - 1].t - E[0].t) / 86400));
+  ctx.globalAlpha = a1;
+  text("lines of code", W / 2, cy - (portrait ? 120 : 130) * u, font(500, 20 * u, MONO), T.dim, "center");
+  const big = font(650, (portrait ? 150 : 160) * u);
+  num(fmt(s.lines), W / 2, cy + (1 - easeOut(a1)) * 20 * u, big, T.text, "center");
+  ctx.globalAlpha = a2;
+  const nAuthors = new Set(E.map(e => e.a)).size;
+  const facts = [`${fmt(totalCommits)} commits`, `${fmt(days)} day${days === 1 ? "" : "s"}`, `${fmt(s.files)} files`].concat(nAuthors > 1 ? [`${nAuthors} people`] : []);
+  text(facts.join("   ·   "), W / 2, cy + 70 * u, font(500, (portrait ? 24 : 24) * u, MONO), T.dim, "center");
+  const bw = portrait ? W - 2 * M - 80 * u : 640 * u;
+  langBar(s.langs, W / 2 - bw / 2, cy + 112 * u, bw * easeOut(a2), 8 * u, false, a2);
+  ctx.globalAlpha = a3;
+  // legend centred under the bar
+  const tot = Object.values(s.langs).reduce((p, q) => p + q, 0) || 1;
+  const items = Object.entries(s.langs).sort((p, q) => q[1] - p[1]).slice(0, 4).filter(e => e[1] / tot >= 0.01);
+  const lf = font(500, 15 * u, MONO);
+  const parts = items.map(([l, n]) => [l, `${l} ${Math.round(100 * n / tot)}%`]);
+  const total = parts.reduce((p, [, s]) => p + 16 * u + tw(s, lf), 0) + 22 * u * (parts.length - 1);
+  let lx = W / 2 - total / 2;
+  for (const [l, s] of parts) {
+    ctx.fillStyle = rgb(langColor(l)); ctx.beginPath(); ctx.arc(lx + 5 * u, cy + 150 * u - 5 * u, 5 * u, 0, Math.PI * 2); ctx.fill();
+    text(s, lx + 16 * u, cy + 150 * u, lf, T.dim);
+    lx += 16 * u + tw(s, lf) + 22 * u;
+  }
+  if (O.endText) {
+    ctx.globalAlpha = smooth(t0 + 0.9, t0 + 1.5, v);
+    text(O.endText, W / 2, cy + (portrait ? 260 : 240) * u, font(500, 26 * u), T.accent, "center");
+  }
+  ctx.restore();
+  return k;
+}
+
+window.DURATION = O.duration;
+window.render = function (v) {
+  ctx.globalAlpha = 1;
+  drawBackground();
+  const intro = TITLE ? smooth(TITLE - 0.8, TITLE, v) : 1;
+  const st = drawMap(v, 1);
+  drawHUD(v, st, intro);
+  drawTitle(v);
+  drawEnd(v);
+};
+window.frame = (v, q = 0.94) => { window.render(v); return cv.toDataURL("image/jpeg", q); };
+window.INFO = { times: V.map(x => +x.toFixed(2)), events: N, files: files.length, captions: captions.length, root: rootPrefix, highlight: hl, highlightFound: !hl || files.some(inHL) };
+window.READY = Promise.all([document.fonts.load("600 40px Geist"), document.fonts.load("500 20px 'Geist Mono'")]).then(() => document.fonts.ready);
+})();
+</script>
+</body>
+</html>

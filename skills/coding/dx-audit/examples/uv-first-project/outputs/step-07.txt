@@ -1,0 +1,4 @@
+$ uv init hello-world
+Initialized project `hello-world` at `~/hello-world`
+
+[exit 0, 0.63s]

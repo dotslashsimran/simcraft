@@ -1,0 +1,221 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>three loop starter</title>
+<!--
+  A seamless three.js loop that implements the full code-loop page contract:
+    window.LOOP              loop length in ms
+    window.READY             set once everything is built
+    window.render(ms)        draw the frame at time ms (no jitter, one sample)
+    window.renderMany(list)  average [[ms, jx, jy], ...] sub-frames on the GPU, then draw once
+    window.setJitter(x, y)   sub-pixel camera offset, in canvas pixels
+    window.probe(ms)         screen positions [x, y, ndcZ] of a few world points, in output pixels
+  URL: ?w=1920&h=1080&scale=.5   (output size, and render scale for previews)
+  Needs, in the same folder:  npm i three@0.170.0 playwright@1.60.0
+
+  Every animated value is a pure function of the loop phase p = ms / LOOP, built from
+  periodic pieces with a whole number of cycles per loop, so p = 1 looks exactly like p = 0.
+  ms is never wrapped with %, so check_loop.py can prove the seam is exact.
+-->
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  #frame { position: relative; }
+  canvas { display: block; }
+</style>
+<div id="frame"><canvas id="gl"></canvas></div>
+<script type="importmap">{ "imports": { "three": "./node_modules/three/build/three.module.js", "three/addons/": "./node_modules/three/examples/jsm/" } }</script>
+<script type="module">
+import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { SimplexNoise } from "three/addons/math/SimplexNoise.js";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+
+// ---------- size ----------
+const Q = new URLSearchParams(location.search);
+const OW = +(Q.get("w") || 1920), OH = +(Q.get("h") || 1080), SCALE = +(Q.get("scale") || 1);
+const PW = Math.round(OW * SCALE), PH = Math.round(OH * SCALE), ASPECT = OW / OH;
+const canvas = document.getElementById("gl");
+canvas.style.width = PW + "px"; canvas.style.height = PH + "px";
+document.getElementById("frame").style.cssText += `width:${PW}px;height:${PH}px`;
+
+const LOOP = 8000; window.LOOP = LOOP;
+const TAU = Math.PI * 2;
+
+// ---------- renderer: the scene renders linear HDR into float targets; tone map and grade happen once, at the end ----------
+const R = new THREE.WebGLRenderer({ canvas, antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" });
+R.setPixelRatio(1); R.setSize(PW, PH, false);
+R.toneMapping = THREE.NoToneMapping;
+R.shadowMap.enabled = true; R.shadowMap.type = THREE.PCFSoftShadowMap;
+
+// seeded random: preview and final must build the exact same scene
+const rng = (() => { let s = 7; return { random: () => (s = (s * 16807) % 2147483647) / 2147483647 }; })();
+const noise = new SimplexNoise(rng);
+
+// ---------- scene ----------
+const scene = new THREE.Scene();
+const BG = new THREE.Color("#f3e4d7");
+scene.background = BG; scene.fog = new THREE.Fog(BG, 34, 75);
+const pmrem = new THREE.PMREMGenerator(R);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environmentIntensity = 0.55;
+
+const sun = new THREE.DirectionalLight("#fff3e6", 3.2);
+sun.position.set(-9, 16, 7); sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048); sun.shadow.radius = 4; sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02;
+Object.assign(sun.shadow.camera, { left: -13, right: 13, top: 13, bottom: -13, near: 1, far: 50 });
+scene.add(sun);
+scene.add(new THREE.HemisphereLight("#fff8f0", "#d9b8a8", 0.3));
+
+// floor
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(200, 200), new THREE.MeshStandardMaterial({ color: "#ecd3c3", roughness: 0.9 }));
+floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+
+// a grid of rounded columns. Each column is a tall box that slides up and down through the floor,
+// so the rounded top never gets stretched the way scaling would stretch it.
+const N = 15, GAP = 1.06, COLH = 8;
+const colGeo = new RoundedBoxGeometry(0.92, COLH, 0.92, 4, 0.16);
+const colMat = new THREE.MeshPhysicalMaterial({ color: "#ffffff", roughness: 0.38, clearcoat: 0.5, clearcoatRoughness: 0.3 });
+const cols = new THREE.InstancedMesh(colGeo, colMat, N * N);
+cols.castShadow = cols.receiveShadow = true; cols.frustumCulled = false;
+cols.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+scene.add(cols);
+const CELLS = [];
+for (let i = 0; i < N; i++) for (let j = 0; j < N; j++) CELLS.push({ x: (i - (N - 1) / 2) * GAP, z: (j - (N - 1) / 2) * GAP });
+
+// a static rim of small tiles around the grid. Many separate meshes on purpose: mergeStatic() below turns them into one draw call.
+const tileMats = ["#e9b9a6", "#f2cfb5", "#d9a3a0"].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.7 }));
+const tileGeo = new RoundedBoxGeometry(0.5, 0.18, 0.5, 2, 0.06);
+const RIM = ((N - 1) / 2) * GAP + 1.4;
+for (let k = 0; k < 4 * 22; k++) {
+  const s = k / 22, side = Math.floor(s), f = (s - side) * 2 - 1;
+  const [x, z] = [[f * RIM, -RIM], [RIM, f * RIM], [-f * RIM, RIM], [-RIM, -f * RIM]][side];
+  const t = new THREE.Mesh(tileGeo, tileMats[k % 3]); t.position.set(x, 0.09, z); t.rotation.y = rng.random() * 0.3;
+  t.castShadow = t.receiveShadow = true; scene.add(t);
+}
+
+// ---------- animation: pure functions of the loop phase p ----------
+// palette, in linear light (THREE.Color converts the sRGB hex codes to linear)
+const PAL = ["#f6c6b0", "#ef8f86", "#c9667f", "#7f5d8f"].map((c) => new THREE.Color(c));
+const ramp = (t, out) => { t = Math.min(Math.max(t, 0), 0.999) * (PAL.length - 1); const i = Math.floor(t); return out.copy(PAL[i]).lerp(PAL[i + 1], t - i); };
+
+// looping noise: walk round a circle in the noise's extra two dimensions. One lap per loop, so it returns exactly to its start.
+const loopNoise = (x, z, p, radius = 0.55) => noise.noise4d(x, z, radius * Math.cos(TAU * p), radius * Math.sin(TAU * p));
+
+function height(c, p) {
+  const r = Math.hypot(c.x, c.z);
+  const wave = Math.sin(TAU * (1 * p - r / 9));          // a ripple that travels outwards: exactly 1 cycle per loop
+  const n = loopNoise(c.x * 0.13, c.z * 0.13, p);         // slow organic drift
+  return 1.55 + 1.15 * wave + 0.6 * n;           // never below about 0.1, so no column sinks out of sight
+}
+
+const M = new THREE.Matrix4(), C = new THREE.Color(), cam = new THREE.PerspectiveCamera(30, ASPECT, 0.5, 200);
+// keep the subject the same size in any aspect ratio: fit by the narrower side
+const BASE_VFOV = 30;
+cam.fov = ASPECT >= 1 ? BASE_VFOV : (2 * Math.atan(Math.tan((BASE_VFOV * Math.PI) / 360) / ASPECT) * 180) / Math.PI;
+
+function place(ms) {
+  const p = ms / LOOP;
+  CELLS.forEach((c, k) => {
+    const h = height(c, p);
+    M.makeTranslation(c.x, h - COLH / 2, c.z); cols.setMatrixAt(k, M);
+    cols.setColorAt(k, ramp(0.1 + h / 3.6, C));
+  });
+  cols.instanceMatrix.needsUpdate = true; cols.instanceColor.needsUpdate = true;
+  // camera: a gentle sway. Every term is sin or cos of a whole number of cycles per loop.
+  const yaw = 0.62 + 0.22 * Math.sin(TAU * p), lift = 15 + 1.5 * Math.sin(TAU * 2 * p + 1.0), dist = 30;
+  cam.position.set(Math.sin(yaw) * dist, lift, Math.cos(yaw) * dist);
+  cam.lookAt(0, 0.4 + 0.3 * Math.sin(TAU * p + 2), 0);
+  cam.updateMatrixWorld();
+}
+
+// ---------- jitter: shift the projection by a sub-pixel, so many renders average into an anti-aliased frame ----------
+const JIT = [0, 0];
+window.setJitter = (jx, jy) => { JIT[0] = jx; JIT[1] = jy; };
+function applyJitter() {
+  cam.updateProjectionMatrix();
+  cam.projectionMatrix.elements[8] += (JIT[0] * 2) / PW;
+  cam.projectionMatrix.elements[9] += (JIT[1] * 2) / PH;
+  cam.projectionMatrixInverse.copy(cam.projectionMatrix).invert();
+}
+
+// ---------- probe: where some world points land on screen, so the renderer can size motion blur ----------
+const PROBE_CELLS = CELLS.filter((_, k) => k % 16 === 0);
+window.probe = (ms) => {
+  place(ms); cam.updateProjectionMatrix();
+  return PROBE_CELLS.map((c) => {
+    const v = new THREE.Vector3(c.x, height(c, ms / LOOP), c.z).project(cam);
+    return [(v.x * OW) / 2, (v.y * OH) / 2, v.z];
+  });
+};
+
+// ---------- speed: merge every static mesh by material ----------
+function mergeStatic(root, keep = new Set()) {
+  root.updateMatrixWorld(true);
+  const groups = new Map(), drop = [];
+  const pinned = (o) => { for (let q = o; q; q = q.parent) if (keep.has(q) || q.userData.noMerge) return true; return false; };
+  root.traverse((o) => {
+    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || Array.isArray(o.material) || pinned(o)) return;
+    const key = o.material.uuid + (o.castShadow ? "s" : "") + (o.receiveShadow ? "r" : "");
+    if (!groups.has(key)) groups.set(key, { m: o.material, cs: o.castShadow, rs: o.receiveShadow, gs: [] });
+    const g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone();
+    for (const a of Object.keys(g.attributes)) if (!["position", "normal", "uv"].includes(a)) g.deleteAttribute(a);
+    g.morphAttributes = {}; g.clearGroups(); g.applyMatrix4(o.matrixWorld);
+    groups.get(key).gs.push(g); drop.push(o);
+  });
+  drop.forEach((o) => o.parent.remove(o));
+  for (const { m, cs, rs, gs } of groups.values()) {
+    const mg = mergeGeometries(gs, false); if (!mg) continue;
+    const mesh = new THREE.Mesh(mg, m); mesh.castShadow = cs; mesh.receiveShadow = rs; root.add(mesh);
+  }
+}
+mergeStatic(scene, new Set([floor, cols]));
+
+// ---------- accumulation: add each sub-frame into a float target, then tone map and grade once ----------
+const gl = R.getContext();
+const canBlendFloat = !!gl.getExtension("EXT_float_blend");
+const frameRT = new THREE.WebGLRenderTarget(PW, PH, { type: THREE.HalfFloatType, samples: 0 });
+const accRT = new THREE.WebGLRenderTarget(PW, PH, { type: canBlendFloat ? THREE.FloatType : THREE.HalfFloatType, depthBuffer: false });
+const quadCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const VERT = "varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0., 1.); }";
+function quad(frag, uniforms, extra = {}) {
+  const m = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: frag, depthTest: false, depthWrite: false, toneMapped: false, ...extra });
+  const s = new THREE.Scene(), q = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m); q.frustumCulled = false; s.add(q); return [s, m];
+}
+const [addScene, addMat] = quad("uniform sampler2D t; uniform float w; varying vec2 vUv; void main(){ gl_FragColor = vec4(texture2D(t, vUv).rgb * w, 1.); }",
+  { t: { value: frameRT.texture }, w: { value: 1 } }, { transparent: true, blending: THREE.AdditiveBlending });
+// output: exposure, Khronos PBR Neutral tone map, grade, vignette, sRGB encode, fixed dither (fixed per pixel, so it cannot blink)
+const [outScene] = quad(`
+  uniform sampler2D t; uniform vec2 res; varying vec2 vUv;
+  vec3 neutral(vec3 c) {
+    float x = min(c.r, min(c.g, c.b)), off = x < .08 ? x - 6.25 * x * x : .04; c -= off;
+    float peak = max(c.r, max(c.g, c.b)); if (peak < .76) return c;
+    float d = .24, np = 1. - d * d / (peak + d - .76); c *= np / peak;
+    return mix(c, vec3(np), 1. - 1. / (.15 * (peak - np) + 1.));
+  }
+  vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1. / 2.4)) - .055, step(.0031308, c)); }
+  float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+  void main() {
+    vec3 c = texture2D(t, vUv).rgb * 1.05;                                // exposure
+    c = neutral(c);
+    float l = dot(c, vec3(.2126, .7152, .0722)); c = max(mix(vec3(l), c, 1.08), 0.);   // a touch more saturation
+    vec2 v = (vUv - .5) * vec2(res.x / res.y, 1.); c *= mix(1., .86, smoothstep(.45, 1.2, length(v)));   // soft vignette
+    c = srgb(clamp(c, 0., 1.));
+    c += (hash(gl_FragCoord.xy) + hash(gl_FragCoord.yx + 7.) - 1.) / 255.;   // triangular dither: no banding in gradients
+    gl_FragColor = vec4(c, 1.);
+  }`, { t: { value: accRT.texture }, res: { value: new THREE.Vector2(PW, PH) } });
+
+window.renderMany = (list) => {
+  R.setRenderTarget(accRT); R.setClearColor(0x000000, 1); R.clear();
+  addMat.uniforms.w.value = 1 / list.length;
+  for (const [ms, jx, jy] of list) {
+    place(ms); window.setJitter(jx, jy); applyJitter();
+    R.setRenderTarget(frameRT); R.render(scene, cam);
+    const ac = R.autoClear; R.autoClear = false; R.setRenderTarget(accRT); R.render(addScene, quadCam); R.autoClear = ac;
+  }
+  R.setRenderTarget(null); R.render(outScene, quadCam);
+  window.setJitter(0, 0);
+};
+window.render = (ms) => window.renderMany([[ms, 0, 0]]);
+window.render(0);
+window.READY = true;
+</script>

@@ -1,0 +1,632 @@
+{
+  "url": "https://docs.astral.sh/uv/getting-started/first-steps/",
+  "finalUrl": "https://docs.astral.sh/uv/getting-started/first-steps/",
+  "slug": "02-first-steps",
+  "status": 200,
+  "error": null,
+  "loadMs": 1821,
+  "title": "First steps | uv",
+  "lang": "en",
+  "canonical": "https://docs.astral.sh/uv/getting-started/first-steps/",
+  "words": 139,
+  "readMinutes": 0.6,
+  "cookieBanner": false,
+  "headings": [
+    {
+      "level": 1,
+      "text": "First steps with uv",
+      "id": "first-steps-with-uv"
+    },
+    {
+      "level": 2,
+      "text": "Next steps",
+      "id": "next-steps"
+    }
+  ],
+  "codeBlocks": [
+    {
+      "text": "$ uv\nAn extremely fast Python package manager.\n\nUsage: uv [OPTIONS] <COMMAND>\n\n...",
+      "lang": null,
+      "heading": "First steps with uv",
+      "copyButton": true,
+      "lines": 6
+    }
+  ],
+  "links": [
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#first-steps-with-uv",
+      "text": "Skip to content",
+      "inMain": false,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/",
+      "text": "uv",
+      "inMain": false,
+      "internal": true
+    },
+    {
+      "href": "https://github.com/astral-sh/uv",
+      "text": "uv\n0.13.7\n91.7k\n3.8k",
+      "inMain": false,
+      "internal": false
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/",
+      "text": "Getting started",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/installation/",
+      "text": "Installation",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/",
+      "text": "First steps",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#next-steps",
+      "text": "Next steps",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/features/",
+      "text": "Features",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/help/",
+      "text": "Getting help",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/",
+      "text": "Guides",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/install-python/",
+      "text": "Installing Python",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/scripts/",
+      "text": "Running scripts",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/tools/",
+      "text": "Using tools",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/projects/",
+      "text": "Working on projects",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/package/",
+      "text": "Publishing packages",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/migration/",
+      "text": "Migration",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/migration/pip-to-project/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/",
+      "text": "Integrations",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/docker/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/jupyter/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/marimo/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/github/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/gitlab/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/pre-commit/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/pytorch/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/fastapi/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/bazel/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/azure/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/google/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/aws/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/jfrog/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/renovate/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/dependabot/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/aws-lambda/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/guides/integration/coiled/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/",
+      "text": "Concepts",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/",
+      "text": "Projects",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/layout/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/init/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/dependencies/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/run/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/sync/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/config/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/build/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/export/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/projects/workspaces/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/tools/",
+      "text": "Tools",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/python-versions/",
+      "text": "Python versions",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/configuration-files/",
+      "text": "Configuration files",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/indexes/",
+      "text": "Package indexes",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/resolution/",
+      "text": "Resolution",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/build-backend/",
+      "text": "Build backend",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/",
+      "text": "Authentication",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/cli/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/http/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/git/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/certificates/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/authentication/third-party/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/cache/",
+      "text": "Caching",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/concepts/preview/",
+      "text": "Preview features",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/",
+      "text": "The pip interface",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/environments/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/packages/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/inspection/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/dependencies/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/compile/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/pip/compatibility/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/",
+      "text": "Reference",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/cli/",
+      "text": "Commands",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/settings/",
+      "text": "Settings",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/environment/",
+      "text": "Environment variables",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/storage/",
+      "text": "Storage",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/installer/",
+      "text": "Installer options",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/troubleshooting/",
+      "text": "Troubleshooting",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/troubleshooting/build-failures/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/troubleshooting/reproducible-examples/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/contributing/",
+      "text": "Contributing",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/internals/",
+      "text": "Internals",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/internals/resolver/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/internals/metadata/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/benchmarks/",
+      "text": "Benchmarks",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/",
+      "text": "Policies",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/versioning/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/platforms/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/python/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/rust/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/reference/policies/license/",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-1",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-2",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-3",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-4",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-5",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://docs.astral.sh/uv/getting-started/first-steps/#__codelineno-0-6",
+      "text": "",
+      "inMain": true,
+      "internal": true
+    },
+    {
+      "href": "https://squidfunk.github.io/mkdocs-material/",
+      "text": "Material for MkDocs",
+      "inMain": false,
+      "internal": false
+    },
+    {
+      "href": "https://discord.com/invite/astral-sh",
+      "text": "",
+      "inMain": false,
+      "internal": false
+    },
+    {
+      "href": "https://pypi.org/project/uv/",
+      "text": "",
+      "inMain": false,
+      "internal": false
+    },
+    {
+      "href": "https://x.com/astral_sh",
+      "text": "",
+      "inMain": false,
+      "internal": false
+    }
+  ],
+  "linksChecked": true,
+  "deadLinks": [],
+  "copyChecks": [
+    {
+      "block": 0,
+      "firstLine": "$ uv",
+      "copiedPrompt": false,
+      "empty": false,
+      "same": false,
+      "copied": "uv"
+    }
+  ],
+  "takenAt": "2026-11-07T15:58:35.939Z"
+}

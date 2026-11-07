@@ -1,0 +1,5 @@
+attempt 1: sorted 1913.5 ms, copysort 1496.2 ms -> naive verdict: copysort is 28% faster
+attempt 2: sorted 1852.8 ms, copysort 2522.7 ms -> naive verdict: sorted is 36% faster
+attempt 3: sorted 3816.0 ms, copysort 1407.5 ms -> naive verdict: copysort is 171% faster
+attempt 4: sorted 1879.2 ms, copysort 1516.0 ms -> naive verdict: copysort is 24% faster
+attempt 5: sorted 2782.6 ms, copysort 2712.7 ms -> naive verdict: copysort is 3% faster

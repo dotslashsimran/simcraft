@@ -1,0 +1,25 @@
+
+sorted     median 225.57 ms   CI 214.60 ms to 272.24 ms  p5 181.03 ms  p95 1.176 s    MAD 44.47 ms
+copysort   median 246.92 ms   CI 211.42 ms to 298.01 ms  p5 190.12 ms  p95 1.028 s    MAD 75.09 ms
+sorted-x4  median 301.64 ms   CI 276.71 ms to 406.38 ms  p5 225.64 ms  p95 1.366 s    MAD 85.01 ms
+
+WARNINGS
+  - environment: 1-minute load average is 16.1 on 8 logical cores. Other work is competing for the CPU; close it or expect wide spread.
+  - environment: 8 other processes are using 5% or more CPU right now.
+  - environment: Running on battery. Laptops often lower clock speeds on battery; plug in.
+  - sorted: times fall steadily during the run (Spearman rho=-0.53). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - sorted: the first 10 measured runs are 293% slower than the last 10. Either warmup was not enough (raise --warmup) or background load dropped during the run.
+  - sorted: robust spread is 20% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - sorted: 10 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - copysort: times fall steadily during the run (Spearman rho=-0.61). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - copysort: the first 10 measured runs are 303% slower than the last 10. Either warmup was not enough (raise --warmup) or background load dropped during the run.
+  - copysort: robust spread is 30% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - copysort: 7 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - sorted-x4: times fall steadily during the run (Spearman rho=-0.56). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - sorted-x4: the first 10 measured runs are 258% slower than the last 10. Either warmup was not enough (raise --warmup) or background load dropped during the run.
+  - sorted-x4: robust spread is 28% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - sorted-x4: 8 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+
+VERDICT
+  No clear difference between copysort and sorted: time ratio 1.095, 95% CI 0.846 to 1.320 includes 1.0 or the test disagrees (p=0.84). Do not claim a speedup. More runs or a quieter machine may narrow it.
+  sorted-x4 is 1.34x slower than sorted (95% CI 1.08x to 1.79x, Mann-Whitney p=0.0014).

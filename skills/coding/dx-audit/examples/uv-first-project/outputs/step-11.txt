@@ -1,0 +1,4 @@
+$ uv run example.py
+hello world
+
+[exit 0, 3.88s]

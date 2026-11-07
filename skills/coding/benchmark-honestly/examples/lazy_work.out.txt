@@ -1,0 +1,22 @@
+
+listcomp    median 260.79 ms   CI 252.64 ms to 407.38 ms  p5 234.02 ms  p95 990.04 ms  MAD 38.03 ms
+map-unused  median 150.79 ms   CI 144.44 ms to 189.86 ms  p5 140.95 ms  p95 246.12 ms  MAD 14.86 ms
+map-used    median 243.98 ms   CI 226.79 ms to 322.18 ms  p5 216.73 ms  p95 505.58 ms  MAD 40.99 ms
+floor       median 154.78 ms   CI 146.08 ms to 180.32 ms  p5 135.63 ms  p95 238.12 ms  MAD 23.46 ms
+
+WARNINGS
+  - environment: 1-minute load average is 11.4 on 8 logical cores. Other work is competing for the CPU; close it or expect wide spread.
+  - environment: 8 other processes are using 5% or more CPU right now.
+  - environment: Running on battery. Laptops often lower clock speeds on battery; plug in.
+  - listcomp: robust spread is 15% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - listcomp: 7 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - map-unused: times fall steadily during the run (Spearman rho=-0.60). Something drifted (thermal throttling, caches, background work). Interleaving keeps the comparison fair, but the absolute numbers are suspect.
+  - map-unused: 3 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - map-unused: median is within noise of the floor command (150.79 ms vs 154.78 ms). The work you meant to measure may not be running at all: check for unused results, lazy evaluation, dead code elimination or constant folding.
+  - map-used: robust spread is 17% of the median. The machine is noisy or the work is bimodal; look at the chart before trusting small differences.
+  - map-used: 3 run(s) were more than 5 MADs from the median. They are kept (they may be real pauses such as GC); medians are not moved much by them.
+  - Commands printed different output (1fa46517d9a5: listcomp, map-used; aa0de22f00f8: map-unused). They may not be doing the same work, so their times are not comparable.
+
+VERDICT
+  NOT A VALID COMPARISON: map-unused is no slower than the empty floor command, so its work probably never ran. (The raw numbers said: map-unused vs listcomp: no stable ratio after subtracting the floor, because one of them is not reliably slower than the floor command.)
+  No clear difference between map-used and listcomp: time ratio 0.841, 95% CI 0.336 to 1.494 includes 1.0 or the test disagrees (p=0.044). Do not claim a speedup. More runs or a quieter machine may narrow it.

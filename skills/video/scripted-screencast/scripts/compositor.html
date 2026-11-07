@@ -1,0 +1,250 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// Draws one output frame: background, window frame, the captured page, cursor, click ripples, caption.
+// Everything is in "stage" units (the nominal output size); K scales stage units to canvas pixels.
+const cv = document.getElementById("c");
+const ctx = cv.getContext("2d");
+let C, K, bg;
+const imgs = new Map();
+
+const PRESETS = {
+  aurora: ["#c9d6ff", "#e2e2ff", "#f5e1ff"],
+  sky: ["#a1c4fd", "#c2e9fb", "#e0f4ff"],
+  peach: ["#ffd3c2", "#fbc2d4", "#e8c6ff"],
+  mint: ["#c7f5d9", "#b8ecf0", "#d6e4ff"],
+  sunset: ["#ff9a8b", "#ff6a88", "#ff99ac"],
+  slate: ["#2b3044", "#3c4361", "#5a4f7a"],
+  ink: ["#0f1117", "#1b1f2b", "#262b3d"],
+};
+
+function rr(x, y, w, h, r) {
+  const p = new Path2D();
+  r = Math.min(r, w / 2, h / 2);
+  p.roundRect(x, y, w, h, r);
+  return p;
+}
+
+function makeBackground(spec) {
+  const b = document.createElement("canvas");
+  b.width = Math.round(C.W * K);
+  b.height = Math.round(C.H * K);
+  const g = b.getContext("2d");
+  if (spec.image) {
+    const im = spec.image;
+    const s = Math.max(b.width / im.width, b.height / im.height);
+    g.drawImage(im, (b.width - im.width * s) / 2, (b.height - im.height * s) / 2, im.width * s, im.height * s);
+    return b;
+  }
+  const stops = PRESETS[spec.name] || (spec.name && spec.name.startsWith("#") ? [spec.name, spec.name] : PRESETS.aurora);
+  const lg = g.createLinearGradient(0, 0, b.width, b.height);
+  stops.forEach((c, i) => lg.addColorStop(i / (stops.length - 1), c));
+  g.fillStyle = lg;
+  g.fillRect(0, 0, b.width, b.height);
+  if (stops[0] !== stops[stops.length - 1]) {
+    const rg = g.createRadialGradient(b.width * 0.25, b.height * 0.15, 0, b.width * 0.25, b.height * 0.15, b.width * 0.7);
+    rg.addColorStop(0, "rgba(255,255,255,0.35)");
+    rg.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = rg;
+    g.fillRect(0, 0, b.width, b.height);
+  }
+  return b;
+}
+
+async function load(src) {
+  if (imgs.has(src)) return imgs.get(src);
+  const p = new Promise((res, rej) => {
+    const im = new Image();
+    im.onload = () => im.decode().then(() => res(im), () => res(im));
+    im.onerror = () => rej(new Error("could not load " + src));
+    im.src = src;
+  });
+  imgs.set(src, p);
+  if (imgs.size > 6) imgs.delete(imgs.keys().next().value);
+  return p;
+}
+
+window.setup = async (cfg) => {
+  C = cfg;
+  K = cfg.k;
+  cv.width = Math.round(C.W * K);
+  cv.height = Math.round(C.H * K);
+  const spec = { name: cfg.background };
+  if (cfg.backgroundImage) spec.image = await load(cfg.backgroundImage);
+  bg = makeBackground(spec);
+  await document.fonts.ready;
+};
+
+// --- cursors, drawn in "cursor units"; the hotspot is at 0,0 ---
+const ARROW = new Path2D("M0 0 L0 17.6 L4.3 13.7 L7.1 20.2 L10.1 18.9 L7.4 12.6 L12.9 12.6 Z");
+const HAND = [
+  [-2.3, 0, 4.6, 12.5, 2.3],   // index finger
+  [2.0, 6.2, 4.1, 7.5, 2.0],   // middle
+  [5.9, 7.2, 3.9, 7.2, 1.9],   // ring
+  [9.5, 8.6, 3.4, 6.2, 1.7],   // little
+  [-6.6, 9.0, 19.4, 12.6, 4.6],// palm
+];
+function drawCursor(type, press) {
+  ctx.save();
+  ctx.scale(press, press);
+  ctx.shadowColor = "rgba(0,0,0,0.28)";
+  ctx.shadowBlur = 3 * ctx.getTransform().a;
+  ctx.shadowOffsetY = 1 * ctx.getTransform().a;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  if (type === "pointer") {
+    ctx.save();
+    ctx.translate(0, 0);
+    ctx.fillStyle = "#000";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 2.6;
+    // thumb, tilted
+    const thumb = new Path2D();
+    ctx.save(); ctx.translate(-5.2, 12.6); ctx.rotate(-0.6);
+    thumb.roundRect(-4.4, -2.3, 8.2, 4.6, 2.3);
+    ctx.stroke(thumb); ctx.restore();
+    for (const [x, y, w, h, r] of HAND) ctx.stroke(rr(x, y, w, h, r));
+    ctx.shadowColor = "transparent";
+    ctx.fillStyle = "#fff";
+    ctx.save(); ctx.translate(-5.2, 12.6); ctx.rotate(-0.6); ctx.fill(thumb); ctx.restore();
+    for (const [x, y, w, h, r] of HAND) ctx.fill(rr(x, y, w, h, r));
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 0.9;
+    ctx.beginPath();
+    ctx.moveTo(2.2, 9.0); ctx.lineTo(2.2, 12.6);
+    ctx.moveTo(6.0, 10.0); ctx.lineTo(6.0, 13.0);
+    ctx.moveTo(9.6, 11.2); ctx.lineTo(9.6, 13.6);
+    ctx.stroke();
+    ctx.restore();
+  } else if (type === "text") {
+    const p = new Path2D("M-3.4 -9 Q0 -9 0 -6.6 Q0 -9 3.4 -9 M0 -6.6 L0 6.6 M-3.4 9 Q0 9 0 6.6 Q0 9 3.4 9 M-2.2 0 L2.2 0");
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 3.6; ctx.stroke(p);
+    ctx.shadowColor = "transparent";
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1.4; ctx.stroke(p);
+  } else {
+    ctx.fillStyle = "#000";
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1.5;
+    ctx.stroke(ARROW);
+    ctx.shadowColor = "transparent";
+    ctx.fill(ARROW);
+    ctx.stroke(ARROW);
+  }
+  ctx.restore();
+}
+
+function drawWindow(z, im) {
+  const { wx, wy, ww, wh, tb, radius } = C;
+  const outer = rr(wx, wy, ww, wh, radius);
+  if (C.shadow) {
+    ctx.save();
+    ctx.shadowColor = C.dark ? "rgba(0,0,0,0.55)" : "rgba(20,20,40,0.30)";
+    ctx.shadowBlur = 60 * z * K;
+    ctx.shadowOffsetY = 22 * z * K;
+    ctx.fillStyle = C.frameColor;
+    ctx.fill(outer);
+    ctx.restore();
+  }
+  ctx.save();
+  ctx.clip(outer);
+  ctx.fillStyle = C.frameColor;
+  ctx.fillRect(wx, wy, ww, wh);
+  if (tb > 0) {
+    const r = tb * 0.2, cy = wy + tb / 2;
+    ["#ff5f57", "#febc2e", "#28c840"].forEach((c, i) => {
+      ctx.beginPath();
+      ctx.arc(wx + tb * 0.62 + i * tb * 0.62, cy, r, 0, Math.PI * 2);
+      ctx.fillStyle = c;
+      ctx.fill();
+    });
+    if (C.title) {
+      ctx.fillStyle = C.dark ? "rgba(255,255,255,0.6)" : "rgba(0,0,0,0.55)";
+      ctx.font = `500 ${tb * 0.38}px ${C.font}`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(C.title, wx + ww / 2, cy + 0.5);
+    }
+  }
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(im, wx, wy + tb, ww, wh - tb);
+  ctx.restore();
+  if (C.border) {
+    ctx.save();
+    ctx.strokeStyle = C.dark ? "rgba(255,255,255,0.14)" : "rgba(0,0,0,0.10)";
+    ctx.lineWidth = 1 / z;
+    ctx.stroke(outer);
+    ctx.restore();
+  }
+}
+
+function drawCaption(cap) {
+  if (!cap || !cap.text || cap.alpha <= 0) return;
+  const fs = C.captionSize;
+  ctx.save();
+  ctx.setTransform(K, 0, 0, K, 0, 0);
+  ctx.globalAlpha = cap.alpha;
+  ctx.font = `600 ${fs}px ${C.font}`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  // wrap to 80% of the width
+  const words = cap.text.split(/\s+/), lines = [];
+  let line = "";
+  for (const w of words) {
+    const t = line ? line + " " + w : w;
+    if (ctx.measureText(t).width > C.W * 0.8 && line) { lines.push(line); line = w; } else line = t;
+  }
+  if (line) lines.push(line);
+  const lh = fs * 1.3, padX = fs * 0.9, padY = fs * 0.5;
+  const tw = Math.max(...lines.map((l) => ctx.measureText(l).width));
+  const bw = tw + padX * 2, bh = lines.length * lh + padY * 2;
+  const rise = (1 - cap.alpha) * fs * 0.3;
+  const x = C.W / 2 - bw / 2, y = C.captionY - bh / 2 + rise;
+  ctx.fillStyle = "rgba(18,18,24,0.84)";
+  ctx.fill(rr(x, y, bw, bh, Math.min(bh / 2, fs)));
+  ctx.fillStyle = "#fff";
+  lines.forEach((l, i) => ctx.fillText(l, C.W / 2, y + padY + lh * (i + 0.5) + 1));
+  ctx.restore();
+}
+
+// f: { src, next, z, vx, vy, cur: {x, y, type, press, show}, ripples: [[x, y, age01]], cap: {text, alpha} }
+window.draw = async (f) => {
+  const im = await load(f.src);
+  if (f.next) load(f.next); // decode the next frame while this one is drawn
+  // camera: stage point (vx, vy) lands at the canvas origin, scaled by z
+  ctx.setTransform(K * f.z, 0, 0, K * f.z, -f.vx * K * f.z, -f.vy * K * f.z);
+  ctx.drawImage(bg, 0, 0, C.W, C.H); // the background zooms with the camera
+  drawWindow(f.z, im);
+  for (const [x, y, a] of f.ripples) {
+    const e = 1 - Math.pow(1 - a, 3);
+    const r = C.unit * (5 + 17 * e);
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(${C.clickRgb},${0.22 * (1 - a)})`;
+    ctx.fill();
+    ctx.lineWidth = C.unit * 1.6;
+    ctx.strokeStyle = `rgba(${C.clickRgb},${0.55 * (1 - a)})`;
+    ctx.stroke();
+  }
+  if (f.cur.show) {
+    ctx.save();
+    ctx.translate(f.cur.x, f.cur.y);
+    ctx.scale(C.unit, C.unit);
+    drawCursor(f.cur.type, f.cur.press);
+    ctx.restore();
+  }
+  drawCaption(f.cap);
+  return true;
+};
+</script>
+</body>
+</html>

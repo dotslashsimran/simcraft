@@ -1,0 +1,9 @@
+$ cd hello-world && uv run hello-world
+Using CPython 3.9.6 interpreter at: /Library/Developer/CommandLineTools/usr/bin/python3
+Creating virtual environment at: .venv
+   Building hello-world @ file://~/hello-world
+      Built hello-world @ file://~/hello-world
+Installed 1 package in 3ms
+Hello from hello-world!
+
+[exit 0, 0.96s]

@@ -1,0 +1,200 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>shader loop starter</title>
+<!--
+  A seamless raw GLSL loop in plain WebGL2 (no libraries) that implements the code-loop page contract:
+    window.LOOP, window.READY, window.render(ms), window.renderMany([[ms, jx, jy], ...]),
+    window.setJitter(x, y), window.probe(ms)
+  URL: ?w=1920&h=1080&scale=.5
+
+  The fragment shader gets `t`, the loop phase. t is ms / LOOP and is NOT wrapped, so t = 1 must look
+  exactly like t = 0. That holds because every moving part is periodic with whole cycles per loop:
+    - sin(TAU * k * t) with integer k
+    - 4D noise whose last two coordinates walk round a circle: (x, y, R cos TAU t, R sin TAU t)
+  Each sub-frame is added into a float buffer; one final pass tone maps, grades and encodes to sRGB.
+-->
+<style>
+  html, body { margin: 0; background: #000; overflow: hidden; }
+  canvas { display: block; }
+</style>
+<div id="frame"><canvas id="gl"></canvas></div>
+<script>
+const Q = new URLSearchParams(location.search);
+const OW = +(Q.get("w") || 1920), OH = +(Q.get("h") || 1080), SCALE = +(Q.get("scale") || 1);
+const PW = Math.round(OW * SCALE), PH = Math.round(OH * SCALE);
+const LOOP = 8000; window.LOOP = LOOP;
+const TAU = Math.PI * 2;
+
+const canvas = document.getElementById("gl");
+canvas.width = PW; canvas.height = PH; canvas.style.width = PW + "px"; canvas.style.height = PH + "px";
+document.getElementById("frame").style.cssText = `width:${PW}px;height:${PH}px`;
+const gl = canvas.getContext("webgl2", { antialias: false, preserveDrawingBuffer: true, premultipliedAlpha: false });
+if (!gl.getExtension("EXT_color_buffer_float")) throw new Error("EXT_color_buffer_float missing");
+const FLOAT_BLEND = !!gl.getExtension("EXT_float_blend");
+
+// ---------- the scene: everything here is a function of the loop phase t ----------
+// Three glowing pearls on Lissajous paths over flowing silk. The JS copy of pearl() feeds probe().
+const PEARLS = [[1, 2, 0.0], [2, 1, 2.1], [1, 3, 4.2]];   // [x cycles, y cycles, phase]: whole numbers of cycles per loop
+function pearl(i, t, aspect) {
+  const [a, b, ph] = PEARLS[i];
+  return [0.4 * aspect * Math.sin(TAU * a * t + ph), 0.36 * Math.sin(TAU * b * t + ph * 1.7)];   // stays inside the frame at any aspect ratio
+}
+
+const SCENE = `#version 300 es
+precision highp float;
+uniform float t;          // loop phase, 0..1 over one loop (not wrapped)
+uniform vec2 res;         // render size in pixels
+uniform vec2 jit;         // sub-pixel jitter in pixels
+uniform vec2 P[3];        // pearl centres (same maths as pearl() in JS)
+out vec4 o;
+#define TAU 6.28318530718
+
+// 4D simplex noise (Ian McEwan and Stefan Gustavson, MIT licence)
+vec4 mod289(vec4 x){ return x - floor(x * (1. / 289.)) * 289.; }
+float mod289(float x){ return x - floor(x * (1. / 289.)) * 289.; }
+vec4 permute(vec4 x){ return mod289(((x * 34.) + 10.) * x); }
+float permute(float x){ return mod289(((x * 34.) + 10.) * x); }
+vec4 taylorInvSqrt(vec4 r){ return 1.79284291400159 - .85373472095314 * r; }
+float taylorInvSqrt(float r){ return 1.79284291400159 - .85373472095314 * r; }
+vec4 grad4(float j, vec4 ip){
+  const vec4 ones = vec4(1., 1., 1., -1.); vec4 p, s;
+  p.xyz = floor(fract(vec3(j) * ip.xyz) * 7.) * ip.z - 1.; p.w = 1.5 - dot(abs(p.xyz), ones.xyz);
+  s = vec4(lessThan(p, vec4(0.))); p.xyz = p.xyz + (s.xyz * 2. - 1.) * s.www; return p; }
+float snoise(vec4 v){
+  const vec4 C = vec4(.138196601125011, .276393202250021, .414589803375032, -.447213595499958);
+  vec4 i = floor(v + dot(v, vec4(.309016994374947451))); vec4 x0 = v - i + dot(i, C.xxxx);
+  vec4 i0; vec3 isX = step(x0.yzw, x0.xxx); vec3 isYZ = step(x0.zww, x0.yyz);
+  i0.x = isX.x + isX.y + isX.z; i0.yzw = 1. - isX; i0.y += isYZ.x + isYZ.y; i0.zw += 1. - isYZ.xy; i0.z += isYZ.z; i0.w += 1. - isYZ.z;
+  vec4 i3 = clamp(i0, 0., 1.), i2 = clamp(i0 - 1., 0., 1.), i1 = clamp(i0 - 2., 0., 1.);
+  vec4 x1 = x0 - i1 + C.xxxx, x2 = x0 - i2 + C.yyyy, x3 = x0 - i3 + C.zzzz, x4 = x0 + C.wwww;
+  i = mod289(i);
+  float j0 = permute(permute(permute(permute(i.w) + i.z) + i.y) + i.x);
+  vec4 j1 = permute(permute(permute(permute(i.w + vec4(i1.w, i2.w, i3.w, 1.)) + i.z + vec4(i1.z, i2.z, i3.z, 1.)) + i.y + vec4(i1.y, i2.y, i3.y, 1.)) + i.x + vec4(i1.x, i2.x, i3.x, 1.));
+  vec4 ip = vec4(1. / 294., 1. / 49., 1. / 7., 0.);
+  vec4 p0 = grad4(j0, ip), p1 = grad4(j1.x, ip), p2 = grad4(j1.y, ip), p3 = grad4(j1.z, ip), p4 = grad4(j1.w, ip);
+  vec4 norm = taylorInvSqrt(vec4(dot(p0, p0), dot(p1, p1), dot(p2, p2), dot(p3, p3)));
+  p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w; p4 *= taylorInvSqrt(dot(p4, p4));
+  vec3 m0 = max(.6 - vec3(dot(x0, x0), dot(x1, x1), dot(x2, x2)), 0.); vec2 m1 = max(.6 - vec2(dot(x3, x3), dot(x4, x4)), 0.);
+  m0 = m0 * m0; m1 = m1 * m1;
+  return 49. * (dot(m0 * m0, vec3(dot(p0, x0), dot(p1, x1), dot(p2, x2))) + dot(m1 * m1, vec2(dot(p3, x3), dot(p4, x4)))); }
+
+// looping noise: (x, y) is space, the last two coordinates go once round a circle of radius r per loop
+float lnoise(vec2 p, float r) { return snoise(vec4(p, r * cos(TAU * t), r * sin(TAU * t))); }
+float fbm(vec2 p, float r) { float s = 0., a = .5; for (int i = 0; i < 3; i++) { s += a * lnoise(p, r); p = p * 2.03 + 17.1; a *= .5; } return s; }
+
+// cosine palette, returned in linear light
+vec3 pal(float x) { vec3 c = .5 + .5 * cos(TAU * (vec3(1., 1., 1.) * x + vec3(.02, .16, .32))); return c * c; }
+
+float silk(vec2 p) {
+  vec2 q = vec2(fbm(p * .9, .45), fbm(p * .9 + 5.2, .45));          // domain warping, Inigo Quilez style
+  return fbm(p * .9 + 1.6 * q + .15 * vec2(sin(TAU * t), cos(TAU * t)), .7);
+}
+
+void main() {
+  vec2 frag = gl_FragCoord.xy + jit;                                 // the jitter moves the sample point inside the pixel
+  vec2 uv = (frag - .5 * res) / res.y;                               // y spans -0.5..0.5 at every aspect ratio
+  float h = silk(uv * 1.3);
+  float e = .002;                                             // fixed offset in uv: the field's slope, for fake lighting
+  float hx = silk((uv + vec2(e, 0.)) * 1.3), hy = silk((uv + vec2(0., e)) * 1.3);
+  vec3 n = normalize(vec3((h - hx) / e, (h - hy) / e, 14.));
+  float light = .55 + .45 * dot(n, normalize(vec3(-.5, .6, .62)));
+  vec3 col = mix(vec3(.010, .012, .030), pal(.55 + .35 * h), smoothstep(-.6, .7, h)) * light;
+  col += pow(max(dot(reflect(vec3(0., 0., -1.), n), normalize(vec3(-.4, .5, .77))), 0.), 12.) * .14;   // sheen
+  // pearls: a soft core plus a wide glow, additive, in linear light so they can go above 1 and the tone map rolls them off
+  for (int i = 0; i < 3; i++) {
+    float d = length(uv - P[i]);
+    vec3 pc = pal(.15 + .23 * float(i)) + .2;
+    col += pc * (smoothstep(.028, .022, d) * 3.5 + .010 / (d * d + .002));
+  }
+  o = vec4(col, 1.);
+}`;
+
+const OUT = `#version 300 es
+precision highp float;
+uniform sampler2D acc; uniform vec2 res; out vec4 o;
+vec3 neutral(vec3 c) {   // Khronos PBR Neutral tone map: keeps hues true, rolls highlights off smoothly
+  float x = min(c.r, min(c.g, c.b)), off = x < .08 ? x - 6.25 * x * x : .04; c -= off;
+  float peak = max(c.r, max(c.g, c.b)); if (peak < .76) return c;
+  float d = .24, np = 1. - d * d / (peak + d - .76); c *= np / peak;
+  return mix(c, vec3(np), 1. - 1. / (.15 * (peak - np) + 1.)); }
+vec3 srgb(vec3 c) { return mix(c * 12.92, 1.055 * pow(c, vec3(1. / 2.4)) - .055, step(.0031308, c)); }
+float hash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+void main() {
+  vec2 uv = gl_FragCoord.xy / res;
+  vec3 c = neutral(texture(acc, uv).rgb * 1.1);
+  vec2 v = (uv - .5) * vec2(res.x / res.y, 1.); c *= mix(1., .8, smoothstep(.4, 1.1, length(v)));
+  c = srgb(clamp(c, 0., 1.));
+  c += (hash(gl_FragCoord.xy) + hash(gl_FragCoord.yx + 7.) - 1.) / 255.;   // fixed triangular dither
+  o = vec4(c, 1.);
+}`;
+
+const ADD = `#version 300 es
+precision highp float; uniform sampler2D src; uniform float w; uniform vec2 res; out vec4 o;
+void main() { o = vec4(texture(src, gl_FragCoord.xy / res).rgb * w, 1.); }`;
+
+// ---------- small WebGL2 helpers ----------
+const VS = `#version 300 es
+in vec2 a; void main() { gl_Position = vec4(a, 0., 1.); }`;
+function program(fs) {
+  const p = gl.createProgram();
+  for (const [type, src] of [[gl.VERTEX_SHADER, VS], [gl.FRAGMENT_SHADER, fs]]) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+    gl.attachShader(p, s);
+  }
+  gl.bindAttribLocation(p, 0, "a"); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const name = gl.getActiveUniform(p, i).name.replace("[0]", ""); u[name] = gl.getUniformLocation(p, name); }
+  return { p, u };
+}
+function target(internal) {
+  const tex = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, tex);
+  gl.texStorage2D(gl.TEXTURE_2D, 1, internal, PW, PH);
+  for (const k of [gl.TEXTURE_MIN_FILTER, gl.TEXTURE_MAG_FILTER]) gl.texParameteri(gl.TEXTURE_2D, k, gl.NEAREST);
+  const fb = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+  gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+  if (gl.checkFramebufferStatus(gl.FRAMEBUFFER) !== gl.FRAMEBUFFER_COMPLETE) throw new Error("framebuffer incomplete");
+  return { tex, fb };
+}
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);   // one big triangle covers the screen
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+gl.viewport(0, 0, PW, PH);
+
+const sceneP = program(SCENE), addP = program(ADD), outP = program(OUT);
+const frameT = target(gl.RGBA16F), accT = target(FLOAT_BLEND ? gl.RGBA32F : gl.RGBA16F);
+
+// ---------- the page contract ----------
+const JIT = [0, 0];
+window.setJitter = (jx, jy) => { JIT[0] = jx; JIT[1] = jy; };
+const aspect = OW / OH;
+// probe: the pearls are the fastest things on screen; report them in output pixels
+window.probe = (ms) => PEARLS.map((_, i) => { const [x, y] = pearl(i, ms / LOOP, aspect); return [x * OH, y * OH, 0]; });
+
+function drawScene(ms) {
+  const t = ms / LOOP;
+  gl.useProgram(sceneP.p);
+  gl.uniform1f(sceneP.u.t, t); gl.uniform2f(sceneP.u.res, PW, PH); gl.uniform2f(sceneP.u.jit, JIT[0], JIT[1]);
+  gl.uniform2fv(sceneP.u.P, PEARLS.flatMap((_, i) => pearl(i, t, aspect)));
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+window.renderMany = (list) => {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, accT.fb); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT);
+  for (const [ms, jx, jy] of list) {
+    window.setJitter(jx, jy);
+    gl.disable(gl.BLEND); gl.bindFramebuffer(gl.FRAMEBUFFER, frameT.fb); drawScene(ms);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, accT.fb); gl.enable(gl.BLEND); gl.blendFunc(gl.ONE, gl.ONE);
+    gl.useProgram(addP.p); gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, frameT.tex);
+    gl.uniform1i(addP.u.src, 0); gl.uniform1f(addP.u.w, 1 / list.length); gl.uniform2f(addP.u.res, PW, PH);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  }
+  gl.disable(gl.BLEND); gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+  gl.useProgram(outP.p); gl.bindTexture(gl.TEXTURE_2D, accT.tex); gl.uniform1i(outP.u.acc, 0); gl.uniform2f(outP.u.res, PW, PH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  window.setJitter(0, 0);
+};
+window.render = (ms) => window.renderMany([[ms, 0, 0]]);
+window.render(0);
+window.READY = true;
+</script>

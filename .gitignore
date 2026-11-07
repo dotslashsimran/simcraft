@@ -1,0 +1,17 @@
+__pycache__/
+.venv/
+node_modules/
+.env
+.env.*
+!.env.example
+.DS_Store
+
+# render and test output (skills keep small examples only)
+frames/
+**/out/
+**/output/
+**/*_frames/
+*.mp4.part
+
+# dx-audit private redaction maps
+.redact.json

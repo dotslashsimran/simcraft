@@ -1,0 +1,269 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Bookshop Orders API (deliberately flawed sample)",
+    "version": "1.4.0",
+    "description": "A fictional API with common design mistakes planted on purpose, used to test the api-design-review scripts."
+  },
+  "servers": [{ "url": "https://api.bookshop.example/v1" }],
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/getCustomers": {
+      "get": {
+        "operationId": "getCustomers",
+        "summary": "List customers",
+        "responses": {
+          "200": {
+            "description": "All customers",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Customer" } } } }
+          }
+        }
+      }
+    },
+    "/customer/{customerId}": {
+      "parameters": [{ "name": "customerId", "in": "path", "required": true, "schema": { "type": "integer" } }],
+      "get": {
+        "operationId": "getCustomer",
+        "responses": {
+          "200": { "description": "A customer", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "put": {
+        "operationId": "updateCustomer",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Customer" } } } },
+          "400": { "description": "Bad input" }
+        }
+      }
+    },
+    "/orders": {
+      "get": {
+        "operationId": "listOrders",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "$ref": "#/components/schemas/OrderStatus" } },
+          { "name": "customerId", "in": "query", "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every order",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } } } }
+          },
+          "401": { "description": "Unauthorized", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "operationId": "createOrder",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewOrder" } } }
+        },
+        "responses": {
+          "200": { "description": "Created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } },
+          "400": { "description": "Invalid", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } },
+          "429": { "description": "Slow down", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/orders/{order_id}": {
+      "parameters": [{ "name": "order_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getOrder",
+        "responses": {
+          "200": { "description": "An order", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "patch": {
+        "operationId": "updateOrder",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["shippingAddress", "notes"],
+                "properties": {
+                  "shippingAddress": { "type": "string", "maxLength": 500 },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Updated", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } }
+        }
+      },
+      "delete": {
+        "operationId": "getOrder",
+        "responses": { "204": { "description": "Deleted" } }
+      }
+    },
+    "/orders/{order_id}/items": {
+      "parameters": [{ "name": "order_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "listOrderItems",
+        "parameters": [
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "per_page", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": { "type": "array", "items": { "$ref": "#/components/schemas/OrderItem" } },
+                    "has_more": { "type": "boolean" }
+                  }
+                }
+              }
+            }
+          },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/orders/{order_id}/refund": {
+      "parameters": [{ "name": "order_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "refundOrder",
+        "requestBody": {
+          "content": { "application/json": { "schema": { "type": "object", "properties": { "amount": { "type": "number", "format": "float" }, "reason": { "type": "string" } } } } }
+        },
+        "responses": {
+          "200": { "description": "Refunded", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } }
+        }
+      }
+    },
+    "/payments": {
+      "post": {
+        "operationId": "createPayment",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Payment" } } }
+        },
+        "responses": {
+          "200": { "description": "Payment", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Payment" } } } },
+          "402": { "description": "Card declined", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorResponse" } } } }
+        }
+      }
+    },
+    "/shippingLabels/{label_id}": {
+      "get": {
+        "operationId": "getShippingLabel",
+        "parameters": [{ "name": "label_id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "responses": {
+          "200": { "description": "Label PDF", "content": { "application/pdf": { "schema": { "type": "string", "format": "binary" } } } }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "operationId": "health",
+        "security": [],
+        "responses": { "200": { "description": "OK" } }
+      }
+    }
+  },
+  "webhooks": {
+    "order.shipped": {
+      "post": {
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "event": { "type": "string" },
+                  "order": { "$ref": "#/components/schemas/Order" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "Acknowledged" } }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "schemas": {
+      "Customer": {
+        "type": "object",
+        "required": ["id", "email"],
+        "properties": {
+          "id": { "type": "integer" },
+          "email": { "type": "string", "format": "email" },
+          "full_name": { "type": "string" },
+          "nickname": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" }
+        }
+      },
+      "OrderStatus": {
+        "type": "string",
+        "enum": ["pending", "Shipped", "CANCELLED"]
+      },
+      "Order": {
+        "type": "object",
+        "required": ["id", "customer_id", "status", "total", "created_at"],
+        "properties": {
+          "id": { "type": "string" },
+          "customer_id": { "type": "integer" },
+          "status": { "$ref": "#/components/schemas/OrderStatus" },
+          "total": { "type": "number", "format": "double" },
+          "currency": { "type": "string" },
+          "shippingAddress": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updatedDate": { "type": "string" },
+          "shipped": { "type": "integer", "description": "Unix seconds" }
+        }
+      },
+      "NewOrder": {
+        "type": "object",
+        "required": ["customer_id", "items"],
+        "properties": {
+          "customer_id": { "type": "integer" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/OrderItem" } },
+          "notes": { "type": "string", "maxLength": 1000 }
+        }
+      },
+      "OrderItem": {
+        "type": "object",
+        "properties": {
+          "isbn": { "type": "string" },
+          "quantity": { "type": "integer", "minimum": 1 },
+          "unitPrice": { "type": "number" }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "required": ["order_id", "amount"],
+        "properties": {
+          "id": { "type": "string", "readOnly": true },
+          "order_id": { "type": "string" },
+          "amount": { "type": "number" },
+          "card_token": { "type": "string" }
+        }
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "message": { "type": "string" } }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": { "msg": { "type": "string" }, "status": { "type": "integer" } }
+          }
+        }
+      }
+    }
+  }
+}
