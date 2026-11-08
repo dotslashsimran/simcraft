@@ -2,6 +2,8 @@
 
 **Skills that teach Claude how to do hard things well.**
 
+<p align="center"><img src="assets/perspective-illusion-night.gif" width="640" alt="An illustrated night street crossing in rain, made with the perspective-illusion skill"><br><sub>Made with <a href="skills/video/perspective-illusion/SKILL.md">perspective-illusion</a></sub></p>
+
 Each skill is a folder with a `SKILL.md`: the method, the judgement calls, and the tools (real, tested scripts) for one kind of work. Claude Code loads the right one when your request matches, and `skill-router` chains two or three together when a job has stages.
 
 They're built from real projects, so they include the parts tutorials skip: what breaks, how to check the result, and how to tell good from good-enough.
