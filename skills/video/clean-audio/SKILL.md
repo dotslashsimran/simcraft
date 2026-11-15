@@ -28,7 +28,7 @@ Run with the rough-cut skill's Python: `PY=~/simcraft/skills/video/rough-cut/.ve
 
 3. **Report** in plain words:
    - the speech-vs-background gap before and after,
-   - the final loudness,
+   - the final loudness (always the measured value; the script reports it, never just the target),
    - what was found (hum, clipping),
    - which strength the clarity check settled on.
 
@@ -44,7 +44,7 @@ Run with the rough-cut skill's Python: `PY=~/simcraft/skills/video/rough-cut/.ve
 
 - **Clean the raw clips before cutting, not after.** The noise is learned from a pause, and the rough cut removes the pauses.
 - Never touch the original files.
-- Never trade clarity for quiet. The clarity check enforces this: no lost words, and confidence within 0.015 of the original.
+- Never trade clarity for quiet. The clarity check enforces this: no lost words, and confidence within 0.015 of the original. If Whisper hears fewer than 8 words in the test window (music, another language), the check can't judge, so it is skipped and `light` is used (or a lower `--strength` you set).
 - Don't push audio to digital silence between words. A little room sound is kept on purpose.
 
 What each step does, why it's built this way, and the test numbers: [reference.md](reference.md).

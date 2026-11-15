@@ -14,7 +14,7 @@ This is the standard voice chain: clean first, then shape, then control the leve
 | 6 | De-ess | `deesser` | Always, gentle. Placed before compression, because compression makes S sounds louder. |
 | 7 | Compress | `acompressor` 3:1, -21 dB threshold | Evens out loud and quiet words |
 | 8 | Soft gate | `agate`, -12 dB, threshold 6 dB above the measured noise floor | Compression lifts the background with the quiet words, and this pulls the pauses back down |
-| 9 | Loudness | Two-pass `loudnorm` to -14 LUFS, -1 dBTP | Two-pass is exact. One-pass pumps the volume. |
+| 9 | Loudness | Gain + lookahead limiter, measured with `ebur128` and corrected until within 0.3 LU of -14 LUFS, true peak -1 dBTP | Two-pass linear `loudnorm` silently stops short when the peak ceiling blocks the gain (tested: -16.8 for -14). One-pass pumps the volume. |
 | 10 | Sync | Shift by the measured delay, pad to the exact original length | The spectral denoiser delays the sound about 25 ms |
 
 ## Why each choice (measured on real footage)
@@ -36,7 +36,7 @@ The strongest settings measured cleanest but lost words. The learned noise print
 
 **The compressor undoes denoising.** Denoise alone gave a 24 dB gap. Adding the compressor brought it back to 23. The soft gate after the compressor fixes that, and the full chain reached 30 dB on the talking-head test clip with confidence 0.970, which is higher than the original 0.963.
 
-**The clarity check.** Noise removal can sound fine in a short listen while making words mushy. Before applying, the script transcribes the busiest 20 seconds at each strength, strongest first. It keeps the first one that loses no words and stays within 0.015 confidence of the original. On the noisy clip, medium failed (0.873 vs 0.891) and light passed.
+**The clarity check.** Noise removal can sound fine in a short listen while making words mushy. Before applying, the script transcribes the busiest 20 seconds at each strength, strongest first. It keeps the first one that loses no words and stays within 0.015 confidence of the original. On the noisy clip, medium failed (0.873 vs 0.891) and light passed. With fewer than 8 words in the window, every level would "pass" (0 words before, 0 after), so the check is skipped and light is used.
 
 **Lip sync.** The cleaned audio measured 25 ms late. The script finds the delay for each video by lining up 20 seconds of the result against the original, then shifts the audio back. After the fix, the offset was 0.00 ms at 10 s, 75 s and 160 s, and the length matched sample for sample.
 

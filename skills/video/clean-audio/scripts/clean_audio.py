@@ -13,11 +13,14 @@ import json, re, subprocess, sys
 from pathlib import Path
 import numpy as np
 from common import ffmpeg, clips, load_wav, Voice, HOP, tc
+from media import loudness, normalize_chain
 
 arg = lambda k, d: sys.argv[sys.argv.index(k) + 1] if k in sys.argv else d
 src = Path(sys.argv[1]).expanduser()
 TARGET = float(arg("--target", -14))            # LUFS. -14 for YouTube/Instagram/TikTok, -16 for podcasts
 STRENGTH = arg("--strength", "medium")
+STRENGTH_SET = "--strength" in sys.argv
+MIN_WORDS = 8  # below this, a word-count/confidence comparison means nothing
 # denoise levels, strongest first. Measured on real footage: one denoiser alone keeps words intact;
 # stacking two (afftdn + anlmdn at s>=1) removed more noise but made Whisper lose 4 of 26 words.
 LEVELS = ["strong", "medium", "light", "off"]
@@ -127,6 +130,10 @@ def pick_level(video, info, tmp, eq):
     start = LEVELS.index(STRENGTH)
     if base is None:
         return LEVELS[start], ["(no Whisper installed, so the clarity check was skipped)"]
+    if base[0] < MIN_WORDS:
+        # 0 words (music, another language, a broken model) would make every level "pass" and pick the strongest
+        lvl = LEVELS[start] if STRENGTH_SET and start >= LEVELS.index("light") else "light"
+        return lvl, [f"too few words heard for a clarity check: {base[0]} in {tc(t0)}-{tc(t0 + 20)}; used {lvl}"]
     log = [f"clarity check on {tc(t0)}-{tc(t0 + 20)}: original {base[0]} words, confidence {base[1]:.3f}"]
     for level in LEVELS[start:]:
         if level == "off":
@@ -140,21 +147,9 @@ def pick_level(video, info, tmp, eq):
     return "off", log
 
 
-def loudnorm_pass(inp, pre, extra_in=()):
-    """Measure, then normalise exactly (two-pass loudnorm is accurate; one-pass pumps the volume)."""
-    fc = ",".join(pre + [f"loudnorm=I={TARGET}:TP=-1.0:LRA=11:print_format=json"])
-    err = subprocess.run([FF, "-hide_banner", *extra_in, "-i", str(inp), "-map", "0:a:0", "-af", fc, "-f", "null", "-"],
-                         capture_output=True, text=True).stderr
-    m = json.loads(err[err.rindex("{"):err.rindex("}") + 1])
-    return (f"loudnorm=I={TARGET}:TP=-1.0:LRA=11:measured_I={m['input_i']}:measured_TP={m['input_tp']}:"
-            f"measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true"), m
-
-
 def measure(path):
-    err = subprocess.run([FF, "-hide_banner", "-i", str(path), "-map", "0:a:0", "-af",
-                          "loudnorm=print_format=json", "-f", "null", "-"], capture_output=True, text=True).stderr
-    m = json.loads(err[err.rindex("{"):err.rindex("}") + 1])
-    return float(m["input_i"]), float(m["input_tp"])
+    m = loudness(path)
+    return m["I"], m["TP"]
 
 
 def delay(video, af, info, tmp):
@@ -181,8 +176,11 @@ def clean(video, out_audio_or_video, mode, tmp):
     level, log = pick_level(video, info, tmp, eq)
     f, notes = chain(info, level, eq)
     notes += log
-    ln, m = loudnorm_pass(video, f)
-    notes.append(f"loudness {float(m['input_i']):.1f} -> {TARGET:.0f} LUFS, peaks capped at -1 dBTP")
+    before = loudness(video, ",".join(f))["I"]
+    lchain, m = normalize_chain(video, f, TARGET)  # gain + limiter, measured until within 0.3 LU
+    ln = ",".join(lchain[len(f):])
+    notes.append(f"loudness {before:.1f} -> {m['I']:.1f} LUFS measured (target {TARGET:g}), true peak {m['TP']:.1f} dBTP"
+                 + ("" if abs(m["I"] - TARGET) <= 0.5 else "  <- could not reach the target without squashing peaks"))
     lag = delay(video, ",".join(f + [ln]), info, tmp)
     sync = [f"atrim=start={lag:.4f}", "asetpts=PTS-STARTPTS"] if lag > 0.001 else []
     if sync:
@@ -226,7 +224,8 @@ def sample(video, tmp):
     t0 = max(0.0, float(np.argmax(np.convolve(v.on.astype(float), np.ones(n), "valid"))) * HOP)
     base = video.with_suffix("")
     # "before" is volume-matched to the target, so the A/B compares quality, not loudness
-    ln, _ = loudnorm_pass(video, [])
+    lchain, _ = normalize_chain(video, [], TARGET)
+    ln = ",".join(lchain)
     subprocess.run([FF, "-v", "error", "-y", "-i", str(video), "-map", "0:a:0", "-af",
                     f"{ln},atrim={t0}:{t0 + 10},asetpts=PTS-STARTPTS", f"{base}_before.wav"], check=True)
     subprocess.run([FF, "-v", "error", "-y", "-i", str(full), "-af", f"atrim={t0}:{t0 + 10},asetpts=PTS-STARTPTS",
