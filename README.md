@@ -4,10 +4,10 @@
 
 **Skills that teach Claude how to do hard things well.**
 
-24 skills for Claude Code, built from real projects, with the parts tutorials skip.
+27 skills for Claude Code, built from real projects, with the parts tutorials skip.
 
 [![MIT License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
-[![Skills](https://img.shields.io/badge/skills-24-black?style=flat-square)](#skills)
+[![Skills](https://img.shields.io/badge/skills-27-black?style=flat-square)](#skills)
 [![Claude Code](https://img.shields.io/badge/for-Claude%20Code-d97757?style=flat-square)](https://claude.com/claude-code)
 [![Stars](https://img.shields.io/github/stars/dotslashsimran/simcraft?style=flat-square&color=black)](https://github.com/dotslashsimran/simcraft/stargazers)
 
@@ -62,6 +62,9 @@ Then open Claude Code and ask for something, like *"make a perspective-illusion 
 | [**rough-cut**](skills/video/rough-cut/SKILL.md) | Raw talking footage to a tight first cut: pauses, ums and retakes removed. |
 | [**clean-audio**](skills/video/clean-audio/SKILL.md) | Voice cleanup that measures first, then keeps every word clear. |
 | [**vox-explainer**](skills/video/vox-explainer/SKILL.md) | Vox-style explainer graphics timed word by word to a voiceover. |
+| [**captions**](skills/video/captions/SKILL.md) | Word-timed captions with the spoken word lit and key words popped. Burn-in .ass plus upload .srt. |
+| [**final-mix**](skills/video/final-mix/SKILL.md) | Music ducked under the voice, then one loudness pass that is measured, not assumed. |
+| [**export**](skills/video/export/SKILL.md) | One final encode matched to the camera original or a platform, with HDR kept or tone-mapped properly. |
 
 ### 🧑‍💻 Engineering
 
