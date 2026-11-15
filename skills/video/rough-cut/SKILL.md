@@ -83,6 +83,7 @@ A 480p preview goes to `renders/v1_854.mp4`. Bump `--v` for every round of notes
 - Each piece is rendered with an exact frame count and uncompressed audio, then all pieces are joined by decoding. Stream-copy joins drop frames at cuts and the audio drifts about 2s over a few minutes.
 - Every piece gets a 12ms fade in and a 20ms fade out, so cuts don't click.
 - Clips with a different shape sit on a blurred copy of themselves instead of black bars.
+- HDR footage (iPhone HLG, HDR10 PQ): previews are tone-mapped to SDR so they look right anywhere; the full-size render stays real 10-bit HEVC HDR with its colour tags. A mix of HDR and SDR clips is tone-mapped to SDR throughout, with a warning.
 
 ### 6. Verify (always, before showing the user)
 ```

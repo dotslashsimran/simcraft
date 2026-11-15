@@ -14,7 +14,7 @@ Accuracy choices, each one fixes a real failure:
 Backend: mlx-whisper on Apple Silicon (GPU, about 2x faster, large-v3-turbo by default), otherwise faster-whisper on CPU
 (medium by default).
 """
-import json, sys
+import json, re, sys
 from pathlib import Path
 from common import clips, extract_wav, load_wav, tc, Voice, HOP
 
@@ -35,8 +35,10 @@ except ImportError:
 
 
 def utterances(pcm, sr=16000, split=0.5, pad=0.2, longest=28.0):
-    """Cut the audio at every pause of `split` seconds or more; one piece per take."""
-    on = Voice(pcm, sr).on
+    """Cut the audio at every pause of `split` seconds or more; one piece per take.
+    A take longer than whisper's window is split at its quietest 10 ms point near each even split (never mid-word),
+    and only the outer edges of a take are padded, so windows never overlap and no word is heard twice."""
+    vo = Voice(pcm, sr); on = vo.on
     regs, start, last = [], None, None
     for i, v in enumerate(on):
         if v:
@@ -46,12 +48,21 @@ def utterances(pcm, sr=16000, split=0.5, pad=0.2, longest=28.0):
             last = i
     if start is not None: regs.append([start * HOP, (last + 1) * HOP])
     regs = [r for r in regs if r[1] - r[0] >= 0.12]
-    out = []
-    for a, b in regs:  # whisper's window is 30 s; split anything longer evenly
-        n = int((b - a) // longest) + 1
-        out += [(a + k * (b - a) / n, a + (k + 1) * (b - a) / n) for k in range(n)]
     end = len(pcm) / sr
-    return [(max(0, a - pad), min(end, b + pad)) for a, b in out]
+    out = []
+    for a, b in regs:  # whisper's window is 30 s; split anything longer at quiet points
+        n = int((b - a) // longest) + 1
+        cuts = [a]
+        for k in range(1, n):
+            t = a + k * (b - a) / n
+            lo, hi = max(cuts[-1] + 1.0, t - 3.0), min(b - 1.0, t + 3.0)
+            cuts.append(vo.quietest(lo, hi) if hi > lo else t)
+        cuts.append(b)
+        for k in range(n):
+            s0 = max(0, cuts[k] - pad) if k == 0 else cuts[k]
+            s1 = min(end, cuts[k + 1] + pad) if k == n - 1 else cuts[k + 1]
+            out.append((s0, s1))
+    return out
 
 
 def transcribe_chunk(chunk):
@@ -77,6 +88,10 @@ def run(wav, windows=None):
                 lines.append(f"[{tc(a + s0)}] (dropped a transcription loop: {text.strip()[:60]}...)")
                 continue
             for w0, w1, w, p in ws_:
+                n_ = re.sub(r"[^\w']", "", w.lower())
+                # same word heard twice at a window join: keep the first
+                if words and a + w0 < words[-1][1] - 0.05 and re.sub(r"[^\w']", "", words[-1][2].lower()) == n_:
+                    continue
                 words.append([round(a + w0, 3), round(min(a + w1, b), 3), w.strip(), round(p, 3)])
             if ws_:
                 lines.append(f"[{tc(a + s0)} - {tc(min(a + s1, b))}] {text.strip()}")
